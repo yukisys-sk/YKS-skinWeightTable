@@ -1,0 +1,15 @@
+schema_version = "1.0.0"
+
+id = "si_weight_editor"
+version = "0.1.0"
+name = "Skin Weight Table"
+tagline = "ウェイトテーブルでスキンウェイトを編集する"
+maintainer = "Yukisys"
+type = "add-on"
+
+blender_version_min = "4.5.0"
+
+license = ["SPDX:MIT"]
+copyright = ["2017 ShikouYamaue", "2026 Yukisys"]
+
+tags = ["Rigging", "Mesh"]
