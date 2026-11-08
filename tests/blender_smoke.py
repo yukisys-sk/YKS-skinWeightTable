@@ -293,6 +293,9 @@ def run():
     bpy.context.view_layer.objects.active = mesh
     assert bpy.ops.siwe.merge_skinned() == {"FINISHED"}
 
+    # --- 別ウィンドウはバックグラウンド（ウィンドウ無し）では実行不可
+    assert not bpy.ops.siwe.open_window.poll()
+
     siwe.unregister()
     print("SMOKE OK")
 

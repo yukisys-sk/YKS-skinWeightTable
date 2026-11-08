@@ -27,7 +27,7 @@ def _auto_update() -> float:
                 table.refresh(bpy.context)
                 for win in wm.windows:
                     for area in win.screen.areas:
-                        if area.type == "VIEW_3D":
+                        if area.type in {"VIEW_3D", "PROPERTIES"}:
                             area.tag_redraw()
     except Exception as exc:  # タイマーは落とさず、原因をコンソールへ出す
         print(f"[Skin Weight Table] 自動更新に失敗しました: {exc!r}")
@@ -46,6 +46,7 @@ def register() -> None:
     props.register()
     for cls in ops_table.CLASSES + ops_tools.CLASSES + ui.CLASSES:
         bpy.utils.register_class(cls)
+    ui.register_menu()
     bpy.app.handlers.undo_post.append(_invalidate)
     bpy.app.handlers.redo_post.append(_invalidate)
     bpy.app.timers.register(_auto_update, persistent=True)
@@ -53,6 +54,7 @@ def register() -> None:
 
 def unregister() -> None:
     """登録したものをすべて解除する。"""
+    ui.unregister_menu()
     for handlers in (bpy.app.handlers.undo_post, bpy.app.handlers.redo_post):
         if _invalidate in handlers:
             handlers.remove(_invalidate)

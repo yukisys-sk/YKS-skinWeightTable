@@ -27,14 +27,10 @@ def _op(layout, idname: str, text: str, icon: str = "NONE", **props):
     return op
 
 
-class SIWE_PT_main(bpy.types.Panel):
+class _MainDraw:
     """メインパネル: ウェイトテーブルと入力。"""
 
-    bl_label = "Skin Weight Table"
-    bl_idname = "SIWE_PT_main"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-    bl_category = "Skin Weight"
+    LABEL = "Skin Weight Table"
 
     def draw(self, context):
         """上段の操作列・テーブル・入力欄を描く。"""
@@ -45,6 +41,7 @@ class SIWE_PT_main(bpy.types.Panel):
         _op(bar, "siwe.refresh", "", "FILE_REFRESH")
         _op(bar, "siwe.clear_table", "", "X")
         _op(bar, "siwe.select_from_cells", "", "RESTRICT_SELECT_OFF")
+        _op(bar, "siwe.open_window", "", "WINDOW")
         bar.separator()
         bar.prop(s, "display_scale", expand=True)
         bar.prop(s, "auto_update", text="", icon="TIME")
@@ -121,14 +118,11 @@ class SIWE_PT_main(bpy.types.Panel):
         _op(lock, "siwe.lock", "Clear Locks", "X", mode="CLEAR")
 
 
-class SIWE_PT_display(bpy.types.Panel):
+class _DisplayDraw:
     """表示・検証オプション。"""
 
-    bl_label = "Display / Check"
-    bl_parent_id = "SIWE_PT_main"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-    bl_options = {"DEFAULT_CLOSED"}
+    LABEL = "Display / Check"
+    CLOSED = True
 
     def draw(self, context):
         """検索・不正ウェイト絞り込み・桁数/丸め/制限を描く。"""
@@ -150,14 +144,11 @@ class SIWE_PT_display(bpy.types.Panel):
         _op(col, "siwe.round_off", "Round Off")
 
 
-class SIWE_PT_smooth(bpy.types.Panel):
+class _SmoothDraw:
     """スムース/ハンマー。"""
 
-    bl_label = "Smooth / Hammer"
-    bl_parent_id = "SIWE_PT_main"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-    bl_options = {"DEFAULT_CLOSED"}
+    LABEL = "Smooth / Hammer"
+    CLOSED = True
 
     def draw(self, context):
         """スムース設定と実行ボタンを描く。"""
@@ -171,14 +162,11 @@ class SIWE_PT_smooth(bpy.types.Panel):
         _op(row, "siwe.smooth", "Hammer", hammer=True)
 
 
-class SIWE_PT_copy(bpy.types.Panel):
+class _CopyDraw:
     """コピー&ペースト系ツール。"""
 
-    bl_label = "Copy / Paste / Transfer"
-    bl_parent_id = "SIWE_PT_main"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-    bl_options = {"DEFAULT_CLOSED"}
+    LABEL = "Copy / Paste / Transfer"
+    CLOSED = True
 
     def draw(self, context):
         """各コピペ系ボタンを描く。"""
@@ -205,14 +193,11 @@ class SIWE_PT_copy(bpy.types.Panel):
         _op(row, "siwe.transfer_paste", "Paste", "PASTEDOWN")
 
 
-class SIWE_PT_symmetry(bpy.types.Panel):
+class _SymmetryDraw:
     """左右対称ツールと命名規則。"""
 
-    bl_label = "Symmetry"
-    bl_parent_id = "SIWE_PT_main"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-    bl_options = {"DEFAULT_CLOSED"}
+    LABEL = "Symmetry"
+    CLOSED = True
 
     def draw(self, context):
         """対称ツールの設定とボタンを描く。"""
@@ -228,14 +213,11 @@ class SIWE_PT_symmetry(bpy.types.Panel):
         col.prop(s, "mirror_rules", text="")
 
 
-class SIWE_PT_misc(bpy.types.Panel):
+class _MiscDraw:
     """スキン状態・Freeze・Go Export/Import・インフルエンス管理。"""
 
-    bl_label = "Skin / Influences / Misc"
-    bl_parent_id = "SIWE_PT_main"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-    bl_options = {"DEFAULT_CLOSED"}
+    LABEL = "Skin / Influences / Misc"
+    CLOSED = True
 
     def draw(self, context):
         """各種ボタンを描く。"""
@@ -258,4 +240,120 @@ class SIWE_PT_misc(bpy.types.Panel):
         _op(col, "siwe.remove_unused", "Remove Unused Influences")
 
 
-CLASSES = (SIWE_PT_main, SIWE_PT_display, SIWE_PT_smooth, SIWE_PT_copy, SIWE_PT_symmetry, SIWE_PT_misc)
+
+MIXINS = (
+    ("main", _MainDraw),
+    ("display", _DisplayDraw),
+    ("smooth", _SmoothDraw),
+    ("copy", _CopyDraw),
+    ("symmetry", _SymmetryDraw),
+    ("misc", _MiscDraw),
+)
+
+
+def _make_panels(prefix: str, space: str, region: str, **extra) -> list[type]:
+    """描画ミキシンから、指定したエディタ用のパネルクラス一式を作る。
+
+    Args:
+        prefix: ``bl_idname`` の接頭辞（例: ``SIWE_PT``）。親子関係もこの接頭辞で結ぶ。
+        space: ``bl_space_type``。
+        region: ``bl_region_type``。
+        **extra: 全パネルに加える属性（``bl_context`` など）。
+
+    Returns:
+        登録するパネルクラスのリスト（メインが先頭）。
+    """
+    classes = []
+    for key, mixin in MIXINS:
+        attrs = {
+            "bl_idname": f"{prefix}_{key}",
+            "bl_label": mixin.LABEL,
+            "bl_space_type": space,
+            "bl_region_type": region,
+            **extra,
+        }
+        if key == "main":
+            if space == "VIEW_3D":
+                attrs["bl_category"] = "Skin Weight"
+        else:
+            attrs["bl_parent_id"] = f"{prefix}_main"
+            attrs["bl_options"] = {"DEFAULT_CLOSED"}
+        classes.append(type(f"{prefix}_{key}", (mixin, bpy.types.Panel), attrs))
+    return classes
+
+
+def _window_poll(cls, context: bpy.types.Context) -> bool:
+    """別ウィンドウ版は、アクティブオブジェクトがメッシュのときだけ表示する。"""
+    return table.active_mesh(context) is not None
+
+
+SIDEBAR_CLASSES = _make_panels("SIWE_PT", "VIEW_3D", "UI")
+WINDOW_CLASSES = _make_panels("SIWE_PT_win", "PROPERTIES", "WINDOW", bl_context="data")
+WINDOW_CLASSES[0].poll = classmethod(_window_poll)
+CLASSES = tuple(SIDEBAR_CLASSES + WINDOW_CLASSES)
+
+
+class SIWE_OT_open_window(bpy.types.Operator):
+    """Skin Weight Table を別ウィンドウ（プロパティエディタ）で開く。"""
+
+    bl_idname = "siwe.open_window"
+    bl_label = "Open in New Window"
+    bl_description = "Skin Weight Table を別ウィンドウで開く（Object Data タブに表示される）"
+
+    @classmethod
+    def poll(cls, context):
+        """ウィンドウがあり、アクティブがメッシュのときだけ実行可能（バックグラウンド実行では不可）。"""
+        return not bpy.app.background and context.window is not None and table.active_mesh(context) is not None
+
+    def execute(self, context):
+        """現在のエリアを複製した新ウィンドウを作り、プロパティエディタの Object Data タブにする。"""
+        wm = context.window_manager
+        area = context.area or next((a for a in context.screen.areas if a.type == "VIEW_3D"), None)
+        if area is None:
+            self.report({"ERROR"}, "ウィンドウを作る元のエリアが見つかりません。3D ビューから実行してください")
+            return {"CANCELLED"}
+        region = next((r for r in area.regions if r.type == "WINDOW"), None)
+        before = set(wm.windows)
+        with context.temp_override(area=area, region=region):
+            bpy.ops.wm.window_new()
+        created = [w for w in wm.windows if w not in before]
+        if not created:
+            self.report({"ERROR"}, "新しいウィンドウを作れませんでした")
+            return {"CANCELLED"}
+        win = created[0]
+        win.screen.areas[0].type = "PROPERTIES"
+        # エディタを切り替えた直後は context の候補が空のため、描画が済むまで少し待って設定する
+        attempts = [0]
+
+        def set_context() -> float | None:
+            """Object Data タブを選ぶ。候補が出るまで 0.1 秒ごとに最大 30 回試す。"""
+            try:
+                area = win.screen.areas[0]
+                area.spaces.active.context = "DATA"
+                area.tag_redraw()
+                return None
+            except (TypeError, ReferenceError):
+                attempts[0] += 1
+                return 0.1 if attempts[0] < 30 else None
+
+        bpy.app.timers.register(set_context, first_interval=0.1)
+        return {"FINISHED"}
+
+
+def _view_menu(self, context: bpy.types.Context) -> None:
+    """3D ビューの View メニューに項目を追加する。"""
+    self.layout.separator()
+    self.layout.operator(SIWE_OT_open_window.bl_idname, icon="WINDOW")
+
+
+CLASSES = CLASSES + (SIWE_OT_open_window,)
+
+
+def register_menu() -> None:
+    """View メニューへの項目追加を登録する。"""
+    bpy.types.VIEW3D_MT_view.append(_view_menu)
+
+
+def unregister_menu() -> None:
+    """View メニューへの項目追加を解除する。"""
+    bpy.types.VIEW3D_MT_view.remove(_view_menu)
