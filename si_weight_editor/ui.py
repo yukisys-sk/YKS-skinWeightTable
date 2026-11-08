@@ -27,6 +27,42 @@ def _op(layout, idname: str, text: str, icon: str = "NONE", **props):
     return op
 
 
+FIRST_COL_UNITS = 5.0  # 頂点番号・オブジェクト名の列の幅
+CELL_UNITS = 2.6  # ウェイトセルの幅（"0.500" がちょうど入る程度）
+HEADER_CHARS = 10  # 縦積みの見出しに出す最大文字数
+
+
+def _cell(row, units: float):
+    """幅を固定したセル用のサブレイアウトを返す。
+
+    Args:
+        row: 親の行レイアウト。
+        units: 幅（Blender の UI 単位）。
+
+    Returns:
+        幅を ``units`` に固定した行レイアウト。
+    """
+    sub = row.row(align=True)
+    sub.ui_units_x = units
+    return sub
+
+
+def _vertical_header(layout, name: str) -> None:
+    """ボーン名を 1 文字ずつ縦に積んだテキストの列見出しを描く（ボタンにはしない）。
+
+    長い名前は、区別しやすい末尾を残して先頭を省略する。
+
+    Args:
+        layout: 描画先のレイアウト。
+        name: ボーン名。
+    """
+    shown = name if len(name) <= HEADER_CHARS else "…" + name[-(HEADER_CHARS - 1):]
+    col = layout.column(align=True)
+    col.scale_y = 0.6
+    for ch in shown:
+        col.label(text=ch)
+
+
 class _MainDraw:
     """メインパネル: ウェイトテーブルと入力。"""
 
@@ -36,6 +72,7 @@ class _MainDraw:
         """上段の操作列・テーブル・入力欄を描く。"""
         s = table.settings(context)
         layout = self.layout
+        layout.scale_y = 0.85  # UI 全体を少し詰める
         bar = layout.row(align=True)
         bar.prop(s, "lock_ui", text="", icon="LOCKED" if s.lock_ui else "UNLOCKED")
         _op(bar, "siwe.refresh", "", "FILE_REFRESH")
@@ -50,6 +87,13 @@ class _MainDraw:
         _op(bar, "siwe.show_cells", "Show All").all = True
         bar.prop(s, "filter_zero", toggle=True)
         _op(bar, "siwe.select_bones", "Joint Hilite")
+
+        # オプションは折りたたまず、表の上にまとめて並べる
+        opts = layout.column(align=True)
+        opts.scale_y = 0.85
+        for draw_section in SECTIONS:
+            draw_section(opts, s)
+            opts.separator(factor=0.3)
 
         self.draw_table(layout, s)
         self.draw_input(layout, s)
@@ -74,26 +118,46 @@ class _MainDraw:
         _op(nav, "siwe.page", "", "TRIA_RIGHT", axis="COL", step=1)
         _op(nav, "siwe.page", "", "TRIA_UP", axis="ROW", step=-1)
         _op(nav, "siwe.page", "", "TRIA_DOWN", axis="ROW", step=1)
-        grid = layout.grid_flow(row_major=True, columns=len(vcols) + 2, even_columns=False, even_rows=True, align=True)
-        _op(grid, "siwe.select_cells", "All", mode="ALL")
+        # grid_flow は行数が増えると高さの計算がずれ、下のボタンに重なることがあるため、
+        # 行ごとに row を積み上げて描く
+        # 表全体の幅を列数から決めて固定する（余白を各セルに配られて列が広がるのを防ぐ）
+        wrapper = layout.row()
+        wrapper.alignment = "LEFT"
+        grid = wrapper.column(align=True)
+        grid.ui_units_x = FIRST_COL_UNITS + CELL_UNITS * (len(vcols) + 1)
+        # 1 行目: ボーン名を縦に積んだテキスト、2 行目: 列選択ボタン、3 行目: オブジェクト名、以降: 頂点番号 + ウェイト
+        head = grid.row(align=True)
+        _cell(head, FIRST_COL_UNITS).label(text="")
         for c in vcols:
-            col = s.cols[c]
-            _op(grid, "siwe.select_cells", col.name[-8:], mode="COL", index=c)
-        grid.label(text="Σ")
+            _vertical_header(_cell(head, CELL_UNITS), s.cols[c].name)
+        _cell(head, CELL_UNITS).label(text="Σ")
+        # 見出しテキストの下に、列を一括選択するボタンを置く（マウスを置くとボーン名の全文が出る）
+        pick = grid.row(align=True)
+        _cell(pick, FIRST_COL_UNITS).label(text="")
+        for c in vcols:
+            _op(_cell(pick, CELL_UNITS), "siwe.select_cells", "", "TRIA_DOWN", mode="COL", index=c)
+        _cell(pick, CELL_UNITS).label(text="")
+        name_row = grid.row(align=True)
+        _cell(name_row, FIRST_COL_UNITS).label(text=obj.name)
+        for _ in vcols:
+            _cell(name_row, CELL_UNITS).label(text="")
+        _cell(name_row, CELL_UNITS).label(text="")
         scale = float(s.display_scale)
         fmt = f"{{:.{s.digits}f}}"
         for r in vrows:
             row = s.rows[r]
-            _op(grid, "siwe.select_cells", str(row.vert), mode="ROW", index=r)
+            line = grid.row(align=True)
+            _op(_cell(line, FIRST_COL_UNITS), "siwe.select_cells", str(row.vert), mode="ROW", index=r)
             for c in vcols:
                 cell = s.cells[r * nc + c]
-                sub = grid.row(align=True)
+                sub = _cell(line, CELL_UNITS)
                 sub.active = cell.value > 0.0 or not s.dim_zero
                 sub.prop(cell, "selected", text=fmt.format(cell.value * scale), toggle=True,
                          icon="LOCKED" if cell.locked else "NONE")
-            tot = grid.row(align=True)
+            tot = _cell(line, CELL_UNITS)
             tot.alert = round(row.total, 6) != 1.0
             tot.label(text=fmt.format(row.total * scale))
+        layout.separator()
         sel = layout.row(align=True)
         for text, mode in (("All", "ALL"), ("None", "NONE"), ("Invert", "INVERT")):
             _op(sel, "siwe.select_cells", text, mode=mode)
@@ -118,137 +182,124 @@ class _MainDraw:
         _op(lock, "siwe.lock", "Clear Locks", "X", mode="CLEAR")
 
 
-class _DisplayDraw:
-    """表示・検証オプション。"""
+def _draw_display(layout, s) -> None:
+    """検索・不正ウェイト絞り込み・桁数/丸め/制限を 3 行で描く。
 
-    LABEL = "Display / Check"
-    CLOSED = True
-
-    def draw(self, context):
-        """検索・不正ウェイト絞り込み・桁数/丸め/制限を描く。"""
-        s = table.settings(context)
-        col = self.layout.column()
-        col.prop(s, "search", icon="VIEWZOOM")
-        col.prop(s, "search_mode", expand=True)
-        col.prop(s, "show_all_influences")
-        col.prop(s, "dim_zero")
-        col.prop(s, "max_rows")
-        col.prop(s, "max_cols")
-        col.separator()
-        col.prop(s, "bad_filter")
-        _op(col, "siwe.select_bad_rows", "Select Bad Vertices")
-        col.separator()
-        col.prop(s, "limit")
-        _op(col, "siwe.enforce_limit", "Enforce Limit")
-        col.prop(s, "digits")
-        _op(col, "siwe.round_off", "Round Off")
-
-
-class _SmoothDraw:
-    """スムース/ハンマー。"""
-
-    LABEL = "Smooth / Hammer"
-    CLOSED = True
-
-    def draw(self, context):
-        """スムース設定と実行ボタンを描く。"""
-        s = table.settings(context)
-        col = self.layout.column()
-        col.prop(s, "smooth_keep_zero")
-        col.prop(s, "smooth_amount")
-        col.prop(s, "smooth_iterations")
-        row = col.row(align=True)
-        _op(row, "siwe.smooth", "Smooth", hammer=False)
-        _op(row, "siwe.smooth", "Hammer", hammer=True)
+    Args:
+        layout: 描画先のレイアウト。
+        s: UI 設定。
+    """
+    row = layout.row(align=True)
+    row.prop(s, "search", text="", icon="VIEWZOOM")
+    row.prop(s, "search_mode", text="")
+    row = layout.row(align=True)
+    row.prop(s, "show_all_influences", text="AllGrp", toggle=True)
+    row.prop(s, "dim_zero", text="Dim", toggle=True)
+    row.prop(s, "bad_filter", text="")
+    _op(row, "siwe.select_bad_rows", "", "RESTRICT_SELECT_OFF")
+    row = layout.row(align=True)
+    row.prop(s, "limit", text="Lim")
+    _op(row, "siwe.enforce_limit", "Enf")
+    row.prop(s, "digits", text="Dig")
+    _op(row, "siwe.round_off", "Round")
+    row = layout.row(align=True)
+    row.prop(s, "max_rows", text="Rows")
+    row.prop(s, "max_cols", text="Cols")
 
 
-class _CopyDraw:
-    """コピー&ペースト系ツール。"""
+def _draw_smooth(layout, s) -> None:
+    """スムース設定と実行ボタンを 1 行で描く。
 
-    LABEL = "Copy / Paste / Transfer"
-    CLOSED = True
-
-    def draw(self, context):
-        """各コピペ系ボタンを描く。"""
-        col = self.layout.column(align=True)
-        col.label(text="Cell (Excel like)")
-        row = col.row(align=True)
-        _op(row, "siwe.cell_copy", "Copy", "COPYDOWN")
-        _op(row, "siwe.cell_paste", "Paste", "PASTEDOWN")
-        col.label(text="Vertex")
-        row = col.row(align=True)
-        _op(row, "siwe.vertex_copy", "Copy", "COPYDOWN")
-        _op(row, "siwe.vertex_paste", "Paste", "PASTEDOWN")
-        col.label(text="Move Influence Weight")
-        row = col.row(align=True)
-        _op(row, "siwe.move_influence", "Copy From", "COPYDOWN", step="COPY")
-        _op(row, "siwe.move_influence", "Move To", "PASTEDOWN", step="PASTE")
-        col.label(text="Simple Weight")
-        _op(col, "siwe.simple_copy", "Simple Weight Copy", "COPYDOWN")
-        _op(col, "siwe.simple_paste", "Paste (Name Index)", "PASTEDOWN", method="INDEX")
-        _op(col, "siwe.simple_paste", "Paste (Name Position)", "PASTEDOWN", method="POSITION")
-        col.label(text="Transfer Weight")
-        row = col.row(align=True)
-        _op(row, "siwe.transfer_copy", "Copy", "COPYDOWN")
-        _op(row, "siwe.transfer_paste", "Paste", "PASTEDOWN")
+    Args:
+        layout: 描画先のレイアウト。
+        s: UI 設定。
+    """
+    row = layout.row(align=True)
+    row.prop(s, "smooth_keep_zero", text="0keep", toggle=True)
+    row.prop(s, "smooth_amount", text="Rt")
+    row.prop(s, "smooth_iterations", text="It")
+    _op(row, "siwe.smooth", "Smooth", hammer=False)
+    _op(row, "siwe.smooth", "Hammer", hammer=True)
 
 
-class _SymmetryDraw:
-    """左右対称ツールと命名規則。"""
+def _pair(layout, caption: str, copy_op: str, paste_op: str, copy_props=None, paste_props=None) -> None:
+    """キャプション付きのコピー/ペースト アイコンボタンを同じ行に並べる。
 
-    LABEL = "Symmetry"
-    CLOSED = True
-
-    def draw(self, context):
-        """対称ツールの設定とボタンを描く。"""
-        s = table.settings(context)
-        col = self.layout.column()
-        col.prop(s, "mirror_axis", expand=True)
-        col.prop(s, "mirror_direction", expand=True)
-        col.prop(s, "mirror_threshold")
-        _op(col, "siwe.symmetrize", "Weight Symmetrize")
-        _op(col, "siwe.auto_symmetry", "Auto Symmetry")
-        _op(col, "siwe.merge_skinned", "Merge With Skinning")
-        col.label(text="Naming Rules（左,右 / 1行1組）")
-        col.prop(s, "mirror_rules", text="")
+    Args:
+        layout: 描画先のレイアウト。
+        caption: 左に出す短い名前。
+        copy_op: コピー側のオペレーター ID。
+        paste_op: ペースト側のオペレーター ID。
+        copy_props: コピー側のオペレータープロパティ。
+        paste_props: ペースト側のオペレータープロパティ。
+    """
+    row = layout.row(align=True)
+    row.label(text=caption)
+    _op(row, copy_op, "", "COPYDOWN", **(copy_props or {}))
+    _op(row, paste_op, "", "PASTEDOWN", **(paste_props or {}))
 
 
-class _MiscDraw:
-    """スキン状態・Freeze・Go Export/Import・インフルエンス管理。"""
+def _draw_copy(layout, s) -> None:
+    """コピー&ペースト系ツールを、2 列に詰めて描く。
 
-    LABEL = "Skin / Influences / Misc"
-    CLOSED = True
-
-    def draw(self, context):
-        """各種ボタンを描く。"""
-        s = table.settings(context)
-        col = self.layout.column(align=True)
-        row = col.row(align=True)
-        _op(row, "siwe.freeze", "Freeze", keep_skin=False)
-        _op(row, "siwe.freeze", "Freeze_M", keep_skin=True)
-        row = col.row(align=True)
-        _op(row, "siwe.toggle_mute", "Toggle Mute Skinning")
-        _op(row, "siwe.bind_pose", "Go to Bind Pose")
-        row = col.row(align=True)
-        _op(row, "siwe.go_export", "Go Export")
-        _op(row, "siwe.go_import", "Go Import")
-        col.separator()
-        col.prop(s, "new_influence", text="")
-        row = col.row(align=True)
-        _op(row, "siwe.add_influence", "Add Influence", "ADD")
-        _op(row, "siwe.remove_influence", "Remove Influence", "REMOVE")
-        _op(col, "siwe.remove_unused", "Remove Unused Influences")
+    Args:
+        layout: 描画先のレイアウト。
+        s: UI 設定。
+    """
+    grid = layout.grid_flow(row_major=True, columns=2, even_columns=True, even_rows=False, align=True)
+    _pair(grid, "Cell", "siwe.cell_copy", "siwe.cell_paste")
+    _pair(grid, "Vtx", "siwe.vertex_copy", "siwe.vertex_paste")
+    _pair(grid, "Move", "siwe.move_influence", "siwe.move_influence", {"step": "COPY"}, {"step": "PASTE"})
+    _pair(grid, "Xfer", "siwe.transfer_copy", "siwe.transfer_paste")
+    row = layout.row(align=True)
+    _op(row, "siwe.simple_copy", "SimpleCopy")
+    _op(row, "siwe.simple_paste", "Idx", method="INDEX")
+    _op(row, "siwe.simple_paste", "Pos", method="POSITION")
 
 
+def _draw_symmetry(layout, s) -> None:
+    """左右対称ツールと命名規則を 3 行で描く。
 
-MIXINS = (
-    ("main", _MainDraw),
-    ("display", _DisplayDraw),
-    ("smooth", _SmoothDraw),
-    ("copy", _CopyDraw),
-    ("symmetry", _SymmetryDraw),
-    ("misc", _MiscDraw),
-)
+    Args:
+        layout: 描画先のレイアウト。
+        s: UI 設定。
+    """
+    row = layout.row(align=True)
+    row.prop(s, "mirror_axis", expand=True)
+    row.prop(s, "mirror_direction", text="")
+    row.prop(s, "mirror_threshold", text="")
+    row = layout.row(align=True)
+    _op(row, "siwe.symmetrize", "Sym")
+    _op(row, "siwe.auto_symmetry", "Auto")
+    _op(row, "siwe.merge_skinned", "Merge")
+    layout.prop(s, "mirror_rules", text="")
+
+
+def _draw_misc(layout, s) -> None:
+    """スキン状態・Freeze・Go Export/Import・インフルエンス管理を 3 行で描く。
+
+    Args:
+        layout: 描画先のレイアウト。
+        s: UI 設定。
+    """
+    row = layout.row(align=True)
+    _op(row, "siwe.freeze", "Frz", keep_skin=False)
+    _op(row, "siwe.freeze", "Frz_M", keep_skin=True)
+    _op(row, "siwe.toggle_mute", "Mute")
+    _op(row, "siwe.bind_pose", "Bind")
+    _op(row, "siwe.go_export", "Exp")
+    _op(row, "siwe.go_import", "Imp")
+    row = layout.row(align=True)
+    row.prop(s, "new_influence", text="")
+    _op(row, "siwe.add_influence", "", "ADD")
+    _op(row, "siwe.remove_influence", "", "REMOVE")
+    _op(row, "siwe.remove_unused", "", "TRASH")
+
+
+SECTIONS = (_draw_display, _draw_smooth, _draw_copy, _draw_symmetry, _draw_misc)
+
+
+MIXINS = (("main", _MainDraw),)
 
 
 def _make_panels(prefix: str, space: str, region: str, **extra) -> list[type]:
