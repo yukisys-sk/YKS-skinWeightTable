@@ -19,6 +19,10 @@ DRAWN: set = set()
 def quit_later() -> None:
     """描画完了を待ってから終了する。"""
     print("DRAWN PANELS:", sorted(DRAWN))
+    expected = {c.__name__ for c in siwe.ui.SIDEBAR_CLASSES + siwe.ui.WINDOW_CLASSES}
+    missing = expected - DRAWN
+    print("MISSING PANELS:", sorted(missing) if missing else "none")
+    print("WINDOWS:", len(bpy.context.window_manager.windows))
     bpy.ops.wm.quit_blender()
 
 
@@ -43,8 +47,8 @@ def _tracked(orig, name):
 
 def step() -> None:
     """メッシュ作成→選択→テーブル構築→再描画し、数秒後に終了する。"""
-    siwe.ui.SIWE_PT_main.bl_category = "Item"  # 既定で開くタブに置いて必ず描画させる
-    for cls in siwe.ui.CLASSES:
+    siwe.ui.SIDEBAR_CLASSES[0].bl_category = "Item"  # 既定で開くタブに置いて必ず描画させる
+    for cls in siwe.ui.SIDEBAR_CLASSES + siwe.ui.WINDOW_CLASSES:
         cls.bl_options = set()
         cls.draw = _tracked(cls.draw, cls.__name__)
     siwe.register()
@@ -61,8 +65,9 @@ def step() -> None:
         for space in area.spaces:
             if space.type == "VIEW_3D":
                 space.show_region_ui = True
+    assert bpy.ops.siwe.open_window() == {"FINISHED"}
     print("GUI DRAW rows/cols:", len(bpy.context.window_manager.siwe.rows), len(bpy.context.window_manager.siwe.cols))
-    bpy.app.timers.register(quit_later, first_interval=2.0)
+    bpy.app.timers.register(quit_later, first_interval=3.0)
 
 
 bpy.app.timers.register(step, first_interval=1.0)
