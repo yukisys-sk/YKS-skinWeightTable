@@ -64,7 +64,7 @@ class SIWE_Settings(bpy.types.PropertyGroup):
     auto_update: BoolProperty(name="Auto Update", default=True, description="選択の変更を自動でテーブルに反映する")
     lock_ui: BoolProperty(name="Lock Update", default=False, description="選択の変更をテーブルに反映しない")
     max_rows: IntProperty(name="Max Rows", default=40, min=1, max=500, update=_refresh_view)
-    max_cols: IntProperty(name="Max Columns", default=12, min=1, max=100)
+    max_cols: IntProperty(name="Max Columns", default=20, min=1, max=100)
     row_offset: IntProperty(name="Row Offset", default=0, min=0)
     col_offset: IntProperty(name="Column Offset", default=0, min=0)
 

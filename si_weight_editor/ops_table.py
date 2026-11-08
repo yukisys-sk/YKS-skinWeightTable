@@ -74,6 +74,14 @@ class SIWE_OT_select_cells(bpy.types.Operator):
     index: IntProperty(default=0)
     extend: BoolProperty(default=False, options={"SKIP_SAVE"})
 
+    @classmethod
+    def description(cls, context, properties):
+        """列見出しでは、ボーン名の全文をツールチップに出す。"""
+        s = table.settings(context)
+        if properties.mode == "COL" and 0 <= properties.index < len(s.cols):
+            return f"{s.cols[properties.index].name}（列を選択。Shift で追加）"
+        return "セルの選択を切り替える（Shift で追加）"
+
     def invoke(self, context, event):
         """Shift 押下で追加選択にする。"""
         self.extend = event.shift
