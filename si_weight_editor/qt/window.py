@@ -20,12 +20,12 @@ from .. import table
 from .. import mesh_io
 from ..core import weight_math as wm
 from .model import Snapshot, VerticalHeader, WeightModel
-from .widgets import InputPopup, RuleEditor, WeightView
+from .widgets import InputPopup, RuleEditor, SmoothSettings, WeightView
 
 ICON_DIR = Path(__file__).parent / "icons"
 # ボタンの文字ラベル。``icons/<キー>.png`` を置くと、そのボタンだけ文字の代わりに画像（自作のアイコン）を使う
 BUTTON_LABELS = {
-    "hummer": "Ham", "hummer_zero": "Ham0", "smooth": "Smo", "smooth_zero": "Smo0",
+    "hummer": "Ham", "hummer_zero": "Ham0", "smooth": "Smo", "smooth_zero": "Smo0", "smooth_setting": "Smo…",
     "freeze": "Frz", "freeze_m": "FrzM",
     "simple_copy": "S.Copy", "simple_topology": "S.Idx", "simple_position": "S.Pos",
     "transfer_copy": "T.Copy", "transfer_paste": "T.Paste",
@@ -42,7 +42,7 @@ LIVE_REFRESH_MS = 60
 FIXED_VALUES = (0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0)
 # ウェイトを書き換えるオペレーター（実行後に Undo ステップを積む）
 DATA_OPS = frozenset({
-    "siwe.apply_input", "siwe.set_fixed", "siwe.lock", "siwe.round_off", "siwe.enforce_limit",
+    "siwe.apply_input", "siwe.set_fixed", "siwe.lock", "siwe.lock_column", "siwe.round_off", "siwe.enforce_limit",
     "siwe.cell_paste", "siwe.vertex_paste", "siwe.move_influence", "siwe.smooth", "siwe.symmetrize",
     "siwe.freeze", "siwe.auto_symmetry", "siwe.merge_skinned", "siwe.simple_paste", "siwe.transfer_paste",
     "siwe.add_influence", "siwe.remove_influence", "siwe.remove_unused", "siwe.go_import",
@@ -203,6 +203,8 @@ class SkinWeightWindow(QtWidgets.QMainWindow):
         main.addWidget(self.view, 1)
         self.view.typed.connect(self.on_typed)
         self.view.right_clicked.connect(self.on_right_click)
+        self.header.sectionDoubleClicked.connect(self.on_header_double_clicked)
+        self.header.right_clicked.connect(self.on_header_right_clicked)
 
         # --- 入力
         self.mode_group = QtWidgets.QButtonGroup(self)
@@ -313,18 +315,19 @@ class SkinWeightWindow(QtWidgets.QMainWindow):
         self.ratio_box.setSuffix("%")
         self.ratio_box.setValue(round(s.smooth_amount * 100))
         self.ratio_box.setToolTip("スムース/ハンマーの適用率（100 で通常のスムースと同じ）")
-        self.ratio_box.valueChanged.connect(lambda v: self.set_prop("smooth_amount", v / 100))
+        self.ratio_box.valueChanged.connect(lambda v: (self.set_prop("smooth_amount", v / 100), self.sync_smooth_settings()))
         self.iter_box = QtWidgets.QSpinBox()
         self.iter_box.setRange(1, 50)
         self.iter_box.setValue(s.smooth_iterations)
         self.iter_box.setPrefix("x")
         self.iter_box.setToolTip("スムースの繰り返し回数")
-        self.iter_box.valueChanged.connect(lambda v: self.set_prop("smooth_iterations", v))
+        self.iter_box.valueChanged.connect(lambda v: (self.set_prop("smooth_iterations", v), self.sync_smooth_settings()))
         main.addLayout(row(
             [ib("hummer", "Weight Hammer", op("siwe.smooth", sync=True, hammer=True)),
              ib("hummer_zero", "Weight Hammer（ウェイト 0 のセルを変更しない）", op("siwe.smooth", sync=True, hammer=True, keep_zero=True))],
             [ib("smooth", "Weight Smooth", op("siwe.smooth", sync=True)),
-             ib("smooth_zero", "Weight Smooth（ウェイト 0 のセルを変更しない）", op("siwe.smooth", sync=True, keep_zero=True))],
+             ib("smooth_zero", "Weight Smooth（ウェイト 0 のセルを変更しない）", op("siwe.smooth", sync=True, keep_zero=True)),
+             ib("smooth_setting", "スムース設定を開く", self.open_smooth_settings)],
             [self.ratio_box, self.iter_box],
             [ib("freeze", "Freeze（モディファイアを適用しスキニングを外す）", op("siwe.freeze", keep_skin=False)),
              ib("freeze_m", "Freeze_M（モディファイアを適用しスキニングを残す）", op("siwe.freeze", keep_skin=True))],
@@ -438,6 +441,27 @@ class SkinWeightWindow(QtWidgets.QMainWindow):
         """
         self.value_box.setValue(value)
         self.apply()
+
+    def on_header_double_clicked(self, section: int) -> None:
+        """見出しのダブルクリック: その列のロックを全頂点について切り替える（Maya 版と同じ）。
+
+        Args:
+            section: 表示上の列番号。実際の列番号（``cols`` の添字）へ変換して渡す。
+        """
+        column = self.model.source_column(section)
+        self.view.clearSelection()
+        if column is not None:
+            self.run("siwe.lock_column", column=column)
+
+    def on_header_right_clicked(self, section: int) -> None:
+        """見出しの右クリック: その列のボーンをアーマチュア上で選択する（Maya 版と同じ）。
+
+        Args:
+            section: 表示上の列番号。見出しの外（-1）なら何もしない。
+        """
+        column = self.model.source_column(section)
+        if column is not None:
+            self.run("siwe.select_bones", column=column)
 
     def on_typed(self, char: str) -> None:
         """セル選択中に数字を打ち始めたとき、入力小窓を開く。
@@ -583,6 +607,39 @@ class SkinWeightWindow(QtWidgets.QMainWindow):
         self._rule_editor = RuleEditor(self.settings().mirror_rules, self)
         self._rule_editor.applied.connect(lambda text: self.set_prop("mirror_rules", text))
         self._rule_editor.show()
+
+    def open_smooth_settings(self, *_args) -> None:
+        """スムース設定ウィンドウを開く（開いていれば前面に出す）。"""
+        existing = getattr(self, "_smooth_settings", None)
+        if existing is not None and existing.isVisible():
+            self.sync_smooth_settings()
+            existing.raise_()
+            return
+        s = self.settings()
+        self._smooth_settings = SmoothSettings(s.smooth_amount, s.smooth_iterations, s.smooth_keep_zero, s.smooth_obey_limit, s.limit, self)
+        self._smooth_settings.changed.connect(self.on_smooth_setting_changed)
+        self._smooth_settings.show()
+
+    def on_smooth_setting_changed(self, name: str, value) -> None:
+        """設定ウィンドウでの変更を反映し、ツールバーの率・回数の表示も合わせる。
+
+        Args:
+            name: ``WindowManager.siwe`` のプロパティ名。
+            value: 新しい値。
+        """
+        self.set_prop(name, value)
+        s = self.settings()
+        for box, v in ((self.ratio_box, round(s.smooth_amount * 100)), (self.iter_box, s.smooth_iterations)):
+            box.blockSignals(True)
+            box.setValue(v)
+            box.blockSignals(False)
+
+    def sync_smooth_settings(self) -> None:
+        """ツールバー側で率・回数を変えたとき、開いている設定ウィンドウの表示を合わせる。"""
+        win = getattr(self, "_smooth_settings", None)
+        if win is not None and win.isVisible():
+            s = self.settings()
+            win.set_values(s.smooth_amount, s.smooth_iterations, s.smooth_keep_zero, s.smooth_obey_limit)
 
     def lock_all(self, lock: bool) -> None:
         """全セルをロック/アンロックする（Lock Wt / Unlock Wt ボタンの右クリック）。

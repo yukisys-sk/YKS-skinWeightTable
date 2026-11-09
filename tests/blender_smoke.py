@@ -105,6 +105,13 @@ def run():
     bpy.ops.siwe.lock(mode="CLEAR")
     assert not any(c.locked for c in s.cells)
 
+    # --- 見出しのダブルクリック相当: 列のロックを全頂点で切り替える
+    bpy.ops.siwe.lock_column(column=1)
+    assert all(c.locked for i, c in enumerate(s.cells) if i % 3 == 1), "lock_column lock"
+    assert not any(c.locked for i, c in enumerate(s.cells) if i % 3 != 1), "lock_column others"
+    bpy.ops.siwe.lock_column(column=1)
+    assert not any(c.locked for c in s.cells), "lock_column unlock"
+
     # --- round / limit / bad rows
     s.digits, s.limit = 1, 2
     bpy.ops.siwe.round_off()
@@ -119,6 +126,12 @@ def run():
     table.refresh(bpy.context)
     assert bpy.ops.siwe.smooth(hammer=False) == {"FINISHED"}
     assert bpy.ops.siwe.smooth(hammer=True) == {"FINISHED"}
+    # Obey Limit: スムース後の使用インフルエンス数が上限以下になる
+    s.smooth_obey_limit, s.limit = True, 1
+    assert bpy.ops.siwe.smooth(hammer=False) == {"FINISHED"}
+    for v, row in mesh_io.read_weights(mesh, [6, 7, 8]).items():
+        assert sum(1 for x in row.values() if x > 1e-6) <= 1, (v, row)
+    s.smooth_obey_limit, s.limit = False, 4
 
     # --- cell / vertex / move
     select_verts(mesh, ids)
@@ -221,6 +234,10 @@ def run():
     bpy.ops.siwe.select_cells(mode="ROW", index=0)
     assert bpy.ops.siwe.select_from_cells() == {"FINISHED"}
     assert bpy.ops.siwe.select_bones() == {"FINISHED"}
+    # 列を指定すると、その列のボーンだけが選択される
+    assert bpy.ops.siwe.select_bones(column=1) == {"FINISHED"}
+    picked = {pb.name for pb in arm.pose.bones if pb.select} if "select" in bpy.types.PoseBone.bl_rna.properties else {b.name for b in arm.data.bones if b.select}
+    assert picked == {s.cols[1].name}, picked
     assert any(pb.select for pb in arm.pose.bones) if "select" in bpy.types.PoseBone.bl_rna.properties else any(b.select for b in arm.data.bones)
     assert bpy.ops.siwe.page(axis="ROW", step=1) == {"FINISHED"}
     assert bpy.ops.siwe.page(axis="COL", step=-1) == {"FINISHED"}

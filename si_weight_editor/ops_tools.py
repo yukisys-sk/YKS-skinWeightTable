@@ -78,7 +78,10 @@ class SIWE_OT_smooth(SIWE_OT_base):
             rows, nbrs, s.smooth_amount, s.smooth_keep_zero or self.keep_zero, s.smooth_iterations,
             targets=[pos[v] for v in sel], include_self=not self.hammer,
         )
-        mesh_io.write_weights(obj, {v: dict(zip(names, result[pos[v]])) for v in sel})
+        rows_out = {v: result[pos[v]] for v in sel}
+        if s.smooth_obey_limit:
+            rows_out = {v: wm.limit_row(row, s.limit) for v, row in rows_out.items()}
+        mesh_io.write_weights(obj, {v: dict(zip(names, row)) for v, row in rows_out.items()})
         table.refresh(context)
         return {"FINISHED"}
 

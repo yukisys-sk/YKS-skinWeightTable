@@ -219,6 +219,7 @@ def _draw_smooth(layout, s) -> None:
     row.prop(s, "smooth_keep_zero", text="0keep", toggle=True)
     row.prop(s, "smooth_amount", text="Rt")
     row.prop(s, "smooth_iterations", text="It")
+    row.prop(s, "smooth_obey_limit", text="Lim", toggle=True)
     _op(row, "siwe.smooth", "Smooth", hammer=False)
     _op(row, "siwe.smooth", "Hammer", hammer=True)
 

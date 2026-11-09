@@ -22,7 +22,8 @@ Maya 用 [SIWeightEditor](https://github.com/ShikouYamaue/SIWeightEditor)（MIT,
 - 性能の注意: `WindowManager` のコレクションはセルへのランダムアクセスが遅い（Edit モード 10 万セルで十数秒）。読み書きは `foreach_get/foreach_set` で一括にする（`tests/blender_perf.py` で計測: 2 万頂点・1000〜2000 行・50 グループで refresh 約 0.1〜0.2 秒）
 - Go Maya Export/Import → Go Export/Import（一時フォルダの .blend）。Auto_Symmetry は反転複製 + グループ名の左右入れ替え
 - 未移植: 「最大インフルエンスの保持」フラグ保持オプション（Blender に対応する属性が無い）、ウェイトハンマーの Maya 標準実装との完全一致（隣接平均による近似）
-- スムース設定ウィンドウ・ジョイント命名規則エディタは別ウィンドウにせず、パネル内のプロパティにした
+- スムース設定（Ratio / Iterations / Keep Zero / Obey Limit）は、サイドバーではパネル内のプロパティ、Qt ウィンドウでは `Smo…` ボタンの小窓（`widgets.SmoothSettings`）。Obey Limit は Maya 版の Obey Max Influences に当たり、スムース後に Enforce Limit の数へ絞る（既定はオフ）。Maya 版の Weight Difference（許容差）は移植していない。ジョイント命名規則エディタはパネル内のプロパティ
+- Qt ウィンドウの見出し: ダブルクリックでその列のロックを全頂点で切り替え（`siwe.lock_column`、ロックが 1 つでもあれば全解除）、右クリックでその列のボーンを選択（`siwe.select_bones` の `column`）。どちらも Maya 版と同じ挙動
 
 ## 開発・テスト
 ```powershell

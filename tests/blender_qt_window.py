@@ -100,6 +100,18 @@ def test_lock() -> None:
     w.run("siwe.lock", mode="CLEAR")
 
 
+def test_header_double_click() -> None:
+    """見出しのダブルクリックで、その列が全頂点ロック → 再度でアンロックされることを確認する。"""
+    w = win()
+    w.reload(force=True)
+    w.header.sectionDoubleClicked.emit(1)
+    nc = len(w.model.snap.col_names)
+    locked = w.model.snap.locked
+    check("header lock", all(locked[r * nc + 1] for r in range(len(w.model.snap.verts))) and not any(locked[r * nc] for r in range(len(w.model.snap.verts))))
+    w.header.sectionDoubleClicked.emit(1)
+    check("header unlock", not any(w.model.snap.locked))
+
+
 def test_edit_mode_undo() -> None:
     """Edit モードで Qt から Apply し、同じ Edit モードのまま Undo で戻ることを確認する（edit-mesh の Undo は別系統）。"""
     from PySide6.QtCore import QItemSelectionModel as S
@@ -149,6 +161,20 @@ def test_tools() -> None:
             sel.select(w.model.index(r, c), S.SelectionFlag.Select)
     check("smooth", w.run("siwe.smooth", sync=True))
     check("hammer keep zero", w.run("siwe.smooth", sync=True, hammer=True, keep_zero=True))
+    # スムース設定ウィンドウ: 値が本体の設定とツールバーに反映される
+    w.open_smooth_settings()
+    sw = w._smooth_settings
+    sw.iterations.setValue(3)
+    sw.ratio.setValue(40)
+    sw.obey_limit.setChecked(True)
+    s = w.settings()
+    check("smooth settings applied", s.smooth_iterations == 3 and abs(s.smooth_amount - 0.4) < 1e-6 and s.smooth_obey_limit)
+    check("smooth toolbar synced", w.iter_box.value() == 3 and w.ratio_box.value() == 40)
+    w.ratio_box.setValue(70)
+    check("smooth window synced back", sw.ratio.value() == 70)
+    check("smooth with settings", w.run("siwe.smooth", sync=True))
+    s.smooth_obey_limit = False
+    sw.close()
     check("cell copy", w.run("siwe.cell_copy", sync=True))
     sel.clear()
     sel.select(w.model.index(0, 0), S.SelectionFlag.Select)
@@ -250,5 +276,5 @@ def schedule(steps) -> None:
         make(fn, i)
 
 
-schedule([setup, test_table, test_apply, test_lock, test_edit_mode_undo, test_tools, test_input_popup_and_slider, shot,
+schedule([setup, test_table, test_apply, test_lock, test_header_double_click, test_edit_mode_undo, test_tools, test_input_popup_and_slider, shot,
           test_new_file_closes_window, test_unregister_closes_window, finish])

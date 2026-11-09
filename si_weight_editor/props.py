@@ -121,6 +121,10 @@ class SIWE_Settings(bpy.types.PropertyGroup):
     smooth_keep_zero: BoolProperty(name="Keep Zero", default=False, description="元が 0 のインフルエンスは 0 のままにする")
     smooth_amount: FloatProperty(name="Ratio", default=1.0, min=0.0, max=1.0, subtype="FACTOR")
     smooth_iterations: IntProperty(name="Iterations", default=1, min=1, max=50)
+    smooth_obey_limit: BoolProperty(
+        name="Obey Limit", default=False,
+        description="スムースの後に Enforce Limit の数までインフルエンスを絞る（Maya 版の Obey Max Influences）",
+    )
 
     # --- 対称 ---
     mirror_axis: EnumProperty(name="Axis", items=[("X", "X", ""), ("Y", "Y", ""), ("Z", "Z", "")], default="X")

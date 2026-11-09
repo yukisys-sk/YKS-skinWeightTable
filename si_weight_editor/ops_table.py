@@ -6,6 +6,7 @@ import bpy
 from bpy.props import BoolProperty, IntProperty
 
 from . import mesh_io, table
+from .core import locks as lock_math
 from .core import weight_math as wm
 
 # セル/頂点/インフルエンス移動のクリップボード（セッション内のみ）
@@ -204,6 +205,32 @@ class SIWE_OT_lock(SIWE_OT_base):
         return {"FINISHED"}
 
 
+class SIWE_OT_lock_column(SIWE_OT_base):
+    """見出しで指定した列のロックを、メッシュの全頂点について切り替える。"""
+
+    bl_idname = "siwe.lock_column"
+    bl_label = "Toggle Column Lock"
+
+    column: IntProperty(default=0, min=0, description="テーブルの列番号")
+
+    def execute(self, context):
+        """列にロックがあれば全頂点を解除、無ければ全頂点をロックする。"""
+        s = table.settings(context)
+        obj = table.active_mesh(context)
+        if not 0 <= self.column < len(s.cols):
+            self.report({"ERROR"}, f"列 {self.column} がありません（テーブルが更新された可能性があります）")
+            return {"CANCELLED"}
+        name = s.cols[self.column].name
+        try:
+            locks, locked = lock_math.toggle_column(table.load_locks(obj), name, range(len(obj.data.vertices)))
+        except ValueError as exc:
+            return self.fail(exc)
+        table.save_locks(obj, locks)
+        table.refresh(context)
+        self.report({"INFO"}, f"{name}: 全頂点を{'ロック' if locked else 'アンロック'}しました")
+        return {"FINISHED"}
+
+
 class SIWE_OT_select_from_cells(SIWE_OT_base):
     """セル上で選択した頂点だけを実際に選択する（⇄）。"""
 
@@ -332,15 +359,23 @@ class SIWE_OT_select_bones(SIWE_OT_base):
     bl_idname = "siwe.select_bones"
     bl_label = "Select Joints"
 
+    column: IntProperty(default=-1, min=-1, description="指定すると、この列のボーンだけを選択する（見出しの右クリック用）。-1 なら選択列・選択セルの列")
+
     def execute(self, context):
-        """選択列（無ければ選択セルの列）のボーンを選択状態にする。"""
+        """指定列、または選択列（無ければ選択セルの列）のボーンを選択状態にする。"""
         s = table.settings(context)
         obj = table.active_mesh(context)
         arm = mesh_io.armature_of(obj)
         if arm is None:
             self.report({"ERROR"}, "Armature モディファイアが無いため、ボーンを特定できません")
             return {"CANCELLED"}
-        names = {s.cols[c].name for _, c in table.selected_cells(s)} | {c.name for c in s.cols if c.selected}
+        if self.column >= 0:
+            if self.column >= len(s.cols):
+                self.report({"ERROR"}, f"列 {self.column} がありません（テーブルが更新された可能性があります）")
+                return {"CANCELLED"}
+            names = {s.cols[self.column].name}
+        else:
+            names = {s.cols[c].name for _, c in table.selected_cells(s)} | {c.name for c in s.cols if c.selected}
         if not names:
             self.report({"WARNING"}, "列またはセルが選択されていません")
             return {"CANCELLED"}
@@ -502,6 +537,7 @@ CLASSES = (
     SIWE_OT_apply_input,
     SIWE_OT_set_fixed,
     SIWE_OT_lock,
+    SIWE_OT_lock_column,
     SIWE_OT_select_from_cells,
     SIWE_OT_show_cells,
     SIWE_OT_select_bad_rows,
