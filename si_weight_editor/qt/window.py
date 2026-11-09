@@ -17,10 +17,15 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import Qt
 
 from .. import table
+from .. import mesh_io
+from ..core import weight_math as wm
 from .model import Snapshot, VerticalHeader, WeightModel
+from .widgets import InputPopup, RuleEditor, WeightView
 
 ICON_DIR = Path(__file__).parent / "icons"
 POLL_MS = 150
+SLIDER_STEPS = 1000
+LIVE_REFRESH_MS = 60
 FIXED_VALUES = (0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0)
 # ウェイトを書き換えるオペレーター（実行後に Undo ステップを積む）
 DATA_OPS = frozenset({
@@ -71,6 +76,7 @@ class SkinWeightWindow(QtWidgets.QMainWindow):
         self.setWindowTitle("Skin Weight Table")
         self.setStyleSheet(STYLE)
         self.model = WeightModel(self)
+        self.buttons: dict[str, QtWidgets.QPushButton] = {}
         self._build_ui()
         self.reload()
         self._timer = QtCore.QTimer(self)
@@ -169,9 +175,10 @@ class SkinWeightWindow(QtWidgets.QMainWindow):
         main.addLayout(self._row(enforce, self.limit_box, QtWidgets.QLabel(" Digits "), self.digit_box, round_but, spacing=4))
 
         self._build_tools(main)
+        self._wire_context_menus()
 
         # --- 表
-        self.view = QtWidgets.QTableView()
+        self.view = WeightView()
         self.view.setModel(self.model)
         self.header = VerticalHeader(self.view)
         self.view.setHorizontalHeader(self.header)
@@ -181,12 +188,14 @@ class SkinWeightWindow(QtWidgets.QMainWindow):
         self.view.horizontalHeader().setDefaultSectionSize(48)
         self.view.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.Fixed)
         main.addWidget(self.view, 1)
+        self.view.typed.connect(self.on_typed)
+        self.view.right_clicked.connect(self.on_right_click)
 
         # --- 入力
         self.mode_group = QtWidgets.QButtonGroup(self)
         mode_buttons = []
         for key, label in (("ABS", "Abs"), ("ADD", "Add"), ("ADD_PERCENT", "Add%")):
-            b = self._button(label, lambda _c=False, k=key: self.set_prop("input_mode", k), "", True)
+            b = self._button(label, lambda _c=False, k=key: self.set_input_mode(k), "", True)
             self.mode_group.addButton(b)
             b.setProperty("key", key)
             if s.input_mode == key:
@@ -207,12 +216,27 @@ class SkinWeightWindow(QtWidgets.QMainWindow):
         apply_but = self._button("Apply", self.apply, "選択セルへ入力値を適用")
         self.value_box.setKeyboardTracking(False)
         main.addLayout(self._row(self.value_box, apply_but, spacing=4))
+        self._live = None
+        self._live_timer = QtCore.QTimer(self)
+        self._live_timer.setSingleShot(True)
+        self._live_timer.timeout.connect(self._live_refresh)
+        self.slider = QtWidgets.QSlider(Qt.Orientation.Horizontal)
+        self.slider.setToolTip("ライブスライダー（ドラッグ中に選択セルへ反映。離すと 1 回の Undo ステップになる）")
+        self.slider.sliderPressed.connect(self.live_begin)
+        self.slider.valueChanged.connect(self.live_update)
+        self.slider.sliderReleased.connect(self.live_end)
+        self.update_slider_range()
+        main.addWidget(self.slider)
 
         fixed = [self._button(f"{v:g}", lambda _c=False, v=v: self.apply_fixed(v)) for v in FIXED_VALUES]
         main.addLayout(self._row(*fixed))
+        lock_but = self._button("Lock Wt", lambda: self.run("siwe.lock", sync=True, mode="LOCK"), "選択セルをロック（右クリックで全セル）")
+        unlock_but = self._button("Unlock Wt", lambda: self.run("siwe.lock", sync=True, mode="UNLOCK"), "選択セルをアンロック（右クリックで全セル）")
+        for b, flag in ((lock_but, True), (unlock_but, False)):
+            b.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            b.customContextMenuRequested.connect(lambda _p, f=flag: self.lock_all(f))
         main.addLayout(self._row(
-            self._button("Lock Wt", lambda: self.run("siwe.lock", sync=True, mode="LOCK"), "選択セルをロック"),
-            self._button("Unlock Wt", lambda: self.run("siwe.lock", sync=True, mode="UNLOCK"), "選択セルをアンロック"),
+            lock_but, unlock_but,
             self._button("Clear locks", lambda: self.run("siwe.lock", mode="CLEAR"), "すべてのロックを解除"),
         ))
         self.statusBar().showMessage("")
@@ -235,6 +259,7 @@ class SkinWeightWindow(QtWidgets.QMainWindow):
         b.setFixedSize(30, 28)
         b.setToolTip(tip)
         b.clicked.connect(slot)
+        self.buttons[icon] = b
         return b
 
     def _build_tools(self, main: QtWidgets.QVBoxLayout) -> None:
@@ -331,6 +356,23 @@ class SkinWeightWindow(QtWidgets.QMainWindow):
              ib("inf_clean", "Remove Unused Influences", op("siwe.remove_unused"))],
         ))
 
+    def _wire_context_menus(self) -> None:
+        """Symmetry 系ボタンの右クリックで、命名規則エディタを開く。"""
+        for key in ("sym_weight", "auto_symmetry"):
+            b = self.buttons[key]
+            b.setToolTip(b.toolTip() + "（右クリックで命名規則）")
+            b.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            b.customContextMenuRequested.connect(self.open_rule_editor)
+
+    def set_input_mode(self, key: str) -> None:
+        """入力モードを切り替え、スライダーの範囲も合わせる。
+
+        Args:
+            key: ``ABS`` / ``ADD`` / ``ADD_PERCENT``。
+        """
+        self.set_prop("input_mode", key)
+        self.update_slider_range()
+
     def confirm_remove_influence(self, *_args) -> None:
         """選択列のインフルエンスを、確認してから削除する（入れ子のイベントループを避けるため非モーダル）。"""
         box = QtWidgets.QMessageBox(QtWidgets.QMessageBox.Icon.Question, "Remove Influence",
@@ -340,6 +382,197 @@ class SkinWeightWindow(QtWidgets.QMainWindow):
                              if r == QtWidgets.QMessageBox.StandardButton.Yes.value else None)
         box.open()
         self._confirm_box = box
+
+    # ------------------------------------------------------------------ 直接入力 / 右クリック
+    def _cursor_pos(self) -> QtCore.QPoint:
+        """マウスカーソルの画面位置を返す（入力小窓の表示位置）。
+
+        Returns:
+            グローバル座標。
+        """
+        return QtGui.QCursor.pos()
+
+    def open_input(self, pos: QtCore.QPoint | None = None, typed: str = "", clicked=None) -> None:
+        """セルへ値を入れる小窓を開く。Enter で、入力欄の値として適用する。
+
+        Args:
+            pos: 表示位置。None ならマウスカーソルの位置。
+            typed: 打ち始めた文字。
+            clicked: 右クリックされたセルの ``QModelIndex``。Abs モードではその値を初期値にする。
+        """
+        s = self.settings()
+        if not self.view.selectionModel().selectedIndexes():
+            self.message("セルが選択されていません")
+            return
+        initial = 0.0
+        if clicked is not None and clicked.isValid() and s.input_mode == "ABS":
+            initial = self.model.snap.values[self.model.cell_index(clicked.row(), clicked.column())] * float(s.display_scale)
+        self._input_popup = InputPopup(self)
+        self._input_popup.accepted.connect(self._on_input_accepted)
+        self._input_popup.open_at(pos or self._cursor_pos(), initial, typed)
+
+    def _on_input_accepted(self, value: float) -> None:
+        """入力小窓で確定した値を、入力欄に入れて適用する。
+
+        Args:
+            value: 入力された値（表示スケール）。
+        """
+        self.value_box.setValue(value)
+        self.apply()
+
+    def on_typed(self, char: str) -> None:
+        """セル選択中に数字を打ち始めたとき、入力小窓を開く。
+
+        Args:
+            char: 打った文字。
+        """
+        self.open_input(typed=char)
+
+    def on_right_click(self, pos: QtCore.QPoint, ctrl: bool) -> None:
+        """表の右クリック: 通常は入力小窓、Ctrl/Shift 付きならセルコピー/ペーストのメニュー。
+
+        Args:
+            pos: 画面（グローバル）座標。
+            ctrl: Ctrl または Shift が押されているか。
+        """
+        index = self.view.indexAt(self.view.viewport().mapFromGlobal(pos))
+        sel = self.view.selectionModel()
+        if index.isValid() and not sel.isSelected(index):
+            sel.select(index, QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect)
+        if ctrl:
+            menu = QtWidgets.QMenu(self)
+            menu.addAction("Cell Copy", lambda: self.run("siwe.cell_copy", sync=True))
+            menu.addAction("Cell Paste", lambda: self.run("siwe.cell_paste", sync=True))
+            menu.popup(pos)
+            self._menu = menu
+            return
+        self.open_input(pos=pos, clicked=index)
+
+    # ------------------------------------------------------------------ ライブスライダー
+    def _slider_range(self) -> tuple[int, int]:
+        """入力モードに合わせたスライダーの範囲（整数）を返す。
+
+        Returns:
+            ``(最小, 最大)``。Abs は 0〜1000、Add 系は ±1000。
+        """
+        return (0, SLIDER_STEPS) if self.settings().input_mode == "ABS" else (-SLIDER_STEPS, SLIDER_STEPS)
+
+    def update_slider_range(self) -> None:
+        """スライダーの範囲を、入力モードに合わせて更新する（値は 0 に戻す）。"""
+        lo, hi = self._slider_range()
+        self.slider.blockSignals(True)
+        self.slider.setRange(lo, hi)
+        self.slider.setValue(0)
+        self.slider.blockSignals(False)
+
+    def _slider_to_value(self, pos: int) -> float:
+        """スライダー位置を、表示スケールの入力値へ換算する。
+
+        Args:
+            pos: スライダーの整数位置。
+
+        Returns:
+            表示スケールの値（0.0〜``display_scale``）。
+        """
+        return pos / SLIDER_STEPS * float(self.settings().display_scale)
+
+    def live_begin(self) -> None:
+        """スライダーを押した瞬間に、選択セルの元のウェイトを記録する（動かして戻しても正しく計算できる）。"""
+        s = self.settings()
+        obj = table.active_mesh(bpy.context)
+        if obj is None:
+            self._live = None
+            return
+        self.sync_selection()
+        by_row: dict[int, list[int]] = {}
+        for r, c in table.selected_cells(s):
+            by_row.setdefault(r, []).append(c)
+        if not by_row:
+            self.message("セルが選択されていません")
+            self._live = None
+            return
+        names = [c.name for c in s.cols]
+        verts = {r: s.rows[r].vert for r in by_row}
+        orig = mesh_io.read_weights(obj, list(verts.values()))
+        nc = len(names)
+        flags = table.cell_flags(s, "locked")
+        self._live = {
+            "object": obj.name,
+            "names": names,
+            "rows": {
+                r: {
+                    "vert": verts[r],
+                    "cols": cols,
+                    "orig": [orig[verts[r]].get(n, 0.0) for n in names],
+                    "locked": {c for c in range(nc) if flags[r * nc + c]},
+                }
+                for r, cols in by_row.items()
+            },
+        }
+
+    def live_update(self, pos: int) -> None:
+        """スライダー移動中: 記録した元の値から計算し直して書き込む（Undo は積まない）。
+
+        Args:
+            pos: スライダーの整数位置。
+        """
+        live = self._live
+        if live is None:
+            return
+        s = self.settings()
+        shown = self._slider_to_value(pos)
+        self.value_box.blockSignals(True)
+        self.value_box.setValue(shown)
+        self.value_box.blockSignals(False)
+        value = shown / float(s.display_scale)
+        obj = bpy.data.objects.get(live["object"])
+        if obj is None:
+            return
+        out = {}
+        for r, info in live["rows"].items():
+            edited = wm.apply_input(info["orig"], info["cols"], info["locked"], s.input_mode, value, s.unlimited)
+            new, bake = wm.normalize_row(edited, info["orig"], info["cols"], info["locked"], force=s.normalize, unlimited=s.unlimited)
+            new = new if bake else info["orig"]
+            out[info["vert"]] = dict(zip(live["names"], new))
+        mesh_io.write_weights(obj, out)
+        redraw_blender()
+        self._live_dirty = True
+        if not self._live_timer.isActive():
+            self._live_timer.start(LIVE_REFRESH_MS)
+
+    def _live_refresh(self) -> None:
+        """スライダー移動中の表の更新（頻度を抑える）。"""
+        table.refresh(bpy.context)
+        self.reload()
+
+    def live_end(self) -> None:
+        """スライダーを離したとき: 表を更新し、ドラッグ全体を 1 回の Undo ステップにする。"""
+        if self._live is None:
+            return
+        self._live_timer.stop()
+        self._live = None
+        table.refresh(bpy.context)
+        self.reload()
+        bpy.ops.ed.undo_push(message="Weight Slider")
+        self.slider.blockSignals(True)
+        self.slider.setValue(0)
+        self.slider.blockSignals(False)
+
+    # ------------------------------------------------------------------ 命名規則・ロック
+    def open_rule_editor(self, *_args) -> None:
+        """左右の命名規則エディタを開く（Symmetry ボタンの右クリック）。"""
+        self._rule_editor = RuleEditor(self.settings().mirror_rules, self)
+        self._rule_editor.applied.connect(lambda text: self.set_prop("mirror_rules", text))
+        self._rule_editor.show()
+
+    def lock_all(self, lock: bool) -> None:
+        """全セルをロック/アンロックする（Lock Wt / Unlock Wt ボタンの右クリック）。
+
+        Args:
+            lock: True でロック、False でアンロック。
+        """
+        self.view.selectAll()
+        self.run("siwe.lock", sync=True, mode="LOCK" if lock else "UNLOCK")
 
     # ------------------------------------------------------------------ 状態
     def settings(self):

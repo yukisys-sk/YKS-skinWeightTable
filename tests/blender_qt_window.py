@@ -163,6 +163,63 @@ def test_tools() -> None:
     check("failure is reported, not raised", w.run("siwe.merge_skinned") is False)
 
 
+def test_input_popup_and_slider() -> None:
+    """直接入力・右クリック入力の小窓と、ライブスライダー（ドラッグ全体が 1 回の Undo）を確認する。"""
+    from PySide6.QtCore import QItemSelectionModel as S
+    w = win()
+    w.reload(force=True)
+    base = mesh_io.read_weights(obj_(), [2])[2]
+    sel = w.view.selectionModel()
+    sel.clear()
+    sel.select(w.model.index(2, 1), S.SelectionFlag.Select)
+
+    # 数字の直接入力 → 小窓 → Enter で適用
+    w.on_typed("7")
+    popup = w._input_popup
+    check("popup typed text", popup.box.lineEdit().text() == "7", popup.box.lineEdit().text())
+    popup.box.lineEdit().setText("0.7")
+    popup._accept()
+    got = mesh_io.read_weights(obj_(), [2])[2]
+    check("popup apply", abs(got["arm.L"] - 0.7) < 1e-4, str(got))
+    bpy.ops.ed.undo()
+
+    # 右クリック（Abs ではクリックしたセルの値が初期値）
+    w.reload(force=True)
+    sel = w.view.selectionModel()
+    sel.clear()
+    sel.select(w.model.index(2, 1), S.SelectionFlag.Select)
+    w.open_input(clicked=w.model.index(2, 1))
+    check("right click initial value", abs(w._input_popup.box.value() - 0.4) < 1e-4, str(w._input_popup.box.value()))
+    w._input_popup.close()
+
+    # ライブスライダー: 押す → 動かす → 戻す → 離す
+    w.value_box.setValue(0.0)
+    w.slider.sliderPressed.emit()
+    w.slider.setValue(900)
+    mid = mesh_io.read_weights(obj_(), [2])[2]
+    check("slider live", abs(mid["arm.L"] - 0.9) < 1e-3, str(mid))
+    w.slider.setValue(300)
+    low = mesh_io.read_weights(obj_(), [2])[2]
+    check("slider back", abs(low["arm.L"] - 0.3) < 1e-3 and abs(low["spine"] - 0.7) < 1e-3, str(low))
+    w.slider.sliderReleased.emit()
+    bpy.ops.ed.undo()
+    after = mesh_io.read_weights(obj_(), [2])[2]
+    check("slider is one undo step", abs(after["arm.L"] - base["arm.L"]) < 1e-4, str(after))
+    w.reload(force=True)
+
+    # 命名規則エディタとロック一括
+    w.open_rule_editor()
+    check("rule editor", w._rule_editor.isVisible())
+    w._rule_editor.edit.setPlainText("_L,_R")
+    w._rule_editor.applied.emit("_L,_R")
+    check("rules applied", w.settings().mirror_rules == "_L,_R")
+    w._rule_editor.close()
+    w.lock_all(True)
+    check("lock all", all(w.model.snap.locked))
+    w.lock_all(False)
+    check("unlock all", not any(w.model.snap.locked))
+
+
 def shot() -> None:
     """ウィンドウのスクリーンショットを保存する。"""
     out = os.environ.get("SIWE_SHOT_DIR")
@@ -193,5 +250,5 @@ def schedule(steps) -> None:
         make(fn, i)
 
 
-schedule([setup, test_table, test_apply, test_lock, test_edit_mode_undo, test_tools, shot,
+schedule([setup, test_table, test_apply, test_lock, test_edit_mode_undo, test_tools, test_input_popup_and_slider, shot,
           test_new_file_closes_window, test_unregister_closes_window, finish])

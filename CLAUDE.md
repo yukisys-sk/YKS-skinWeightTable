@@ -10,7 +10,7 @@ Maya 用 [SIWeightEditor](https://github.com/ShikouYamaue/SIWeightEditor)（MIT,
   - `mesh_io.py` ウェイト読み書き。Edit モードは bmesh の deform レイヤー経由（`mesh.vertices[].groups` は Edit 中に書くと失われる）
   - `table.py` テーブル構築と行単位の編集、`props.py` UI 状態（`WindowManager.siwe`）
   - `ops_table.py` テーブル系オペレーター、`ops_tools.py` サブツール、`ui.py` パネル（3D ビュー > N > Skin Weight タブ。同じ描画ミキシンから、別ウィンドウ用のプロパティエディタ版 `SIWE_PT_win_*` も生成する）
-  - `qt/` PySide6 の外部ウィンドウ（Maya 版の画面構成に近づけたもの）。`window.py` 画面、`model.py` 表モデルと縦書きヘッダー、`runtime.py` Qt のイベントを Blender のタイマーで回す
+  - `qt/` PySide6 の外部ウィンドウ（Maya 版の画面構成に近づけたもの）。`window.py` 画面、`model.py` 表モデルと縦書きヘッダー、`runtime.py` Qt のイベントを Blender のタイマーで回す、`widgets.py` 表ビュー（数字の直接入力・右クリック）・入力小窓・命名規則エディタ。ライブスライダーは押した時点の元のウェイトを記録し、動かすたびに元から計算し直して書き込み、離したときに 1 回だけ Undo ステップを積む
 - `tests/test_core.py` 純粋ロジックの pytest、`tests/blender_smoke.py` Blender 上の全オペレーター検証、`tests/blender_gui_draw.py` パネル描画確認
 
 ## Maya 版との対応と差異
