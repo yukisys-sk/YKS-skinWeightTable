@@ -11,7 +11,7 @@ Maya 用 [SIWeightEditor](https://github.com/ShikouYamaue/SIWeightEditor)（MIT,
   - `table.py` テーブル構築と行単位の編集、`props.py` UI 状態（`WindowManager.siwe`）
   - `ops_table.py` テーブル系オペレーター、`ops_tools.py` サブツール、`ui.py` パネル（3D ビュー > N > Skin Weight タブ。同じ描画ミキシンから、別ウィンドウ用のプロパティエディタ版 `SIWE_PT_win_*` も生成する）
   - `qt/` PySide6 の外部ウィンドウ（Maya 版の画面構成に近づけたもの）。`window.py` 画面、`model.py` 表モデルと縦書きヘッダー、`runtime.py` Qt のイベントを Blender のタイマーで回す、`widgets.py` 表ビュー（数字の直接入力・右クリック）・入力小窓・命名規則エディタ。ライブスライダーは押した時点の元のウェイトを記録し、動かすたびに元から計算し直して書き込み、離したときに 1 回だけ Undo ステップを積む
-- `tests/test_core.py` 純粋ロジックの pytest、`tests/blender_smoke.py` Blender 上の全オペレーター検証、`tests/blender_gui_draw.py` パネル描画確認
+- `tests/test_core.py` 純粋ロジックの pytest、`tests/test_slim_wheel.py` wheel 軽量化の pytest、`tests/blender_smoke.py` Blender 上の全オペレーター検証、`tests/blender_gui_draw.py` パネル描画確認
 
 ## Maya 版との対応と差異
 - インフルエンス = 頂点グループ（Armature の deform ボーンと同名のものだけ。`All Groups` で全表示）
@@ -44,8 +44,9 @@ Maya 用 [SIWeightEditor](https://github.com/ShikouYamaue/SIWeightEditor)（MIT,
 - 新しい機能は、計算を `core/` に分けて pytest を足し、オペレーターを `blender_smoke.py` に足す
 
 ## Qt ウィンドウ（PySide6）
-- PySide6-Essentials / shiboken6 は拡張機能の wheel として zip に同梱する（約 80MB）。`scriptsuild.ps1` が初回に PyPI から `.wheels_cache/` へ取得して staging の `wheels/` に入れる。リポジトリには入れない
+- PySide6-Essentials / shiboken6 は拡張機能の wheel として zip に同梱する（約 80MB）。`scripts\build.ps1` が初回に PyPI から `.wheels_cache/` へ取得して staging の `wheels/` に入れる。リポジトリには入れない
 - LGPL v3 のため `NOTICE.md` に表記とソースの入手先を書いている。wheel は別ファイルのまま同梱する（差し替え可能にするため）
+- Windows の長いパスが無効な環境で wheel の展開が失敗しないよう、`scripts/slim_wheel.py` が wheel から `PySide6/qml/` と `*.obj` を除いて再梱包する（`build.ps1` が実行）。Blender は wheel を `<ユーザー設定>\extensions\.local\lib\python3.13\site-packages` へ展開し、展開先が 260 文字に届くと途中で止まるため（PySide6-Essentials 6.12.0 の `qml` 内の `*.obj` が該当）。試験は `BLENDER_USER_RESOURCES` を長いパス（基準パスで 160 文字以上）にして行う
 - `qt/` は「ウィンドウを開く操作」の中でだけ import する。登録時に import すると、PySide6 が無い環境で拡張機能全体が使えなくなる
 - 守ること（破るとクラッシュまたは固まる）:
   - `QApplication` を作ってからウィジェットを作る（`runtime.ensure_app()`）
