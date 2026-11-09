@@ -57,6 +57,7 @@ class SIWE_OT_smooth(SIWE_OT_base):
     bl_label = "Smooth"
 
     hammer: BoolProperty(default=False, description="自分自身を含めず隣接頂点の平均にする")
+    keep_zero: BoolProperty(default=False, description="元が 0 のインフルエンスは 0 のままにする（設定の Keep Zero とどちらかが有効なら適用）")
 
     def execute(self, context):
         """隣接頂点との平均で選択頂点のウェイトを更新する（Keep Zero / Ratio / Iterations 対応）。"""
@@ -74,7 +75,7 @@ class SIWE_OT_smooth(SIWE_OT_base):
         rows = [[data[v].get(n, 0.0) for n in names] for v in used]
         nbrs = [[pos[n] for n in adj[v] if n in pos] for v in used]
         result = wm.smooth_rows(
-            rows, nbrs, s.smooth_amount, s.smooth_keep_zero, s.smooth_iterations,
+            rows, nbrs, s.smooth_amount, s.smooth_keep_zero or self.keep_zero, s.smooth_iterations,
             targets=[pos[v] for v in sel], include_self=not self.hammer,
         )
         mesh_io.write_weights(obj, {v: dict(zip(names, result[pos[v]])) for v in sel})

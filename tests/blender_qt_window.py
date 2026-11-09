@@ -137,6 +137,32 @@ def test_unregister_closes_window() -> None:
     siwe.register()
 
 
+def test_tools() -> None:
+    """サブツールのボタンが、Qt から実行でき、結果が表に反映されることを確認する。"""
+    from PySide6.QtCore import QItemSelectionModel as S
+    w = win()
+    w.reload(force=True)
+    sel = w.view.selectionModel()
+    sel.clear()
+    for r in range(w.model.rowCount()):
+        for c in range(w.model.columnCount()):
+            sel.select(w.model.index(r, c), S.SelectionFlag.Select)
+    check("smooth", w.run("siwe.smooth", sync=True))
+    check("hammer keep zero", w.run("siwe.smooth", sync=True, hammer=True, keep_zero=True))
+    check("cell copy", w.run("siwe.cell_copy", sync=True))
+    sel.clear()
+    sel.select(w.model.index(0, 0), S.SelectionFlag.Select)
+    check("cell paste", w.run("siwe.cell_paste", sync=True))
+    check("vertex copy", w.run("siwe.vertex_copy"))
+    check("vertex paste", w.run("siwe.vertex_paste"))
+    check("simple copy", w.run("siwe.simple_copy"))
+    check("simple paste index", w.run("siwe.simple_paste", method="INDEX"))
+    w.influence_edit.setText("extra")
+    check("add influence", w.run("siwe.add_influence") and "extra" in obj_().vertex_groups)
+    check("remove unused is safe", w.run("siwe.remove_unused"))
+    check("failure is reported, not raised", w.run("siwe.merge_skinned") is False)
+
+
 def shot() -> None:
     """ウィンドウのスクリーンショットを保存する。"""
     out = os.environ.get("SIWE_SHOT_DIR")
@@ -167,5 +193,5 @@ def schedule(steps) -> None:
         make(fn, i)
 
 
-schedule([setup, test_table, test_apply, test_lock, test_edit_mode_undo, shot,
+schedule([setup, test_table, test_apply, test_lock, test_edit_mode_undo, test_tools, shot,
           test_new_file_closes_window, test_unregister_closes_window, finish])

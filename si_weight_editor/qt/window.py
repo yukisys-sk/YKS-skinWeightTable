@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import bpy
 from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import Qt
@@ -17,12 +19,16 @@ from PySide6.QtCore import Qt
 from .. import table
 from .model import Snapshot, VerticalHeader, WeightModel
 
+ICON_DIR = Path(__file__).parent / "icons"
 POLL_MS = 150
 FIXED_VALUES = (0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0)
 # ウェイトを書き換えるオペレーター（実行後に Undo ステップを積む）
 DATA_OPS = frozenset({
     "siwe.apply_input", "siwe.set_fixed", "siwe.lock", "siwe.round_off", "siwe.enforce_limit",
     "siwe.cell_paste", "siwe.vertex_paste", "siwe.move_influence", "siwe.smooth", "siwe.symmetrize",
+    "siwe.freeze", "siwe.auto_symmetry", "siwe.merge_skinned", "siwe.simple_paste", "siwe.transfer_paste",
+    "siwe.add_influence", "siwe.remove_influence", "siwe.remove_unused", "siwe.go_import",
+    "siwe.toggle_mute", "siwe.bind_pose",
 })
 
 STYLE = """
@@ -162,6 +168,8 @@ class SkinWeightWindow(QtWidgets.QMainWindow):
         round_but = self._button("Round Off", lambda: self.run("siwe.round_off"), "表示桁数で四捨五入")
         main.addLayout(self._row(enforce, self.limit_box, QtWidgets.QLabel(" Digits "), self.digit_box, round_but, spacing=4))
 
+        self._build_tools(main)
+
         # --- 表
         self.view = QtWidgets.QTableView()
         self.view.setModel(self.model)
@@ -209,6 +217,129 @@ class SkinWeightWindow(QtWidgets.QMainWindow):
         ))
         self.statusBar().showMessage("")
         self.resize(760, 640)
+
+    def icon_button(self, icon: str, tip: str, slot) -> QtWidgets.QPushButton:
+        """Maya 版と同じアイコンの正方形ボタンを作る。
+
+        Args:
+            icon: ``icons/`` 内の PNG のファイル名（拡張子なし）。
+            tip: ツールチップ（機能名）。
+            slot: クリック時の呼び出し先。
+
+        Returns:
+            ``QPushButton``。
+        """
+        b = QtWidgets.QPushButton()
+        b.setIcon(QtGui.QIcon(str(ICON_DIR / f"{icon}.png")))
+        b.setIconSize(QtCore.QSize(22, 22))
+        b.setFixedSize(30, 28)
+        b.setToolTip(tip)
+        b.clicked.connect(slot)
+        return b
+
+    def _build_tools(self, main: QtWidgets.QVBoxLayout) -> None:
+        """サブツールのボタン列（Maya 版の 3 行の並び）を作る。
+
+        Args:
+            main: 追加先のレイアウト。
+        """
+        s = table.settings(bpy.context)
+
+        def op(op_id: str, sync: bool = False, **kw):
+            """オペレーターを実行するスロットを返す。"""
+            return lambda *_: self.run(op_id, sync=sync, **kw)
+
+        def row(*groups) -> QtWidgets.QHBoxLayout:
+            """グループ（ボタンのリスト）の間に隙間を空けて 1 行にする。"""
+            lay = QtWidgets.QHBoxLayout()
+            lay.setSpacing(0)
+            lay.setContentsMargins(0, 0, 0, 0)
+            for i, group in enumerate(groups):
+                if i:
+                    lay.addSpacing(10)
+                for w in group:
+                    lay.addWidget(w)
+            lay.addStretch(1)
+            return lay
+
+        ib = self.icon_button
+        # 1 行目: ハンマー / スムース / 比率 / Freeze
+        self.ratio_box = QtWidgets.QSpinBox()
+        self.ratio_box.setRange(0, 100)
+        self.ratio_box.setSuffix("%")
+        self.ratio_box.setValue(round(s.smooth_amount * 100))
+        self.ratio_box.setToolTip("スムース/ハンマーの適用率（100 で通常のスムースと同じ）")
+        self.ratio_box.valueChanged.connect(lambda v: self.set_prop("smooth_amount", v / 100))
+        self.iter_box = QtWidgets.QSpinBox()
+        self.iter_box.setRange(1, 50)
+        self.iter_box.setValue(s.smooth_iterations)
+        self.iter_box.setPrefix("x")
+        self.iter_box.setToolTip("スムースの繰り返し回数")
+        self.iter_box.valueChanged.connect(lambda v: self.set_prop("smooth_iterations", v))
+        main.addLayout(row(
+            [ib("hummer", "Weight Hammer", op("siwe.smooth", sync=True, hammer=True)),
+             ib("hummer_zero", "Weight Hammer（ウェイト 0 のセルを変更しない）", op("siwe.smooth", sync=True, hammer=True, keep_zero=True))],
+            [ib("smooth", "Weight Smooth", op("siwe.smooth", sync=True)),
+             ib("smooth_zero", "Weight Smooth（ウェイト 0 のセルを変更しない）", op("siwe.smooth", sync=True, keep_zero=True))],
+            [self.ratio_box, self.iter_box],
+            [ib("freeze", "Freeze（モディファイアを適用しスキニングを外す）", op("siwe.freeze", keep_skin=False)),
+             ib("freeze_m", "Freeze_M（モディファイアを適用しスキニングを残す）", op("siwe.freeze", keep_skin=True))],
+        ))
+        # 2 行目: コピー / ペースト系
+        main.addLayout(row(
+            [ib("simple_copy", "Simple Weight Copy", op("siwe.simple_copy")),
+             ib("simple_topology", "Simple Weight Paste（Name Index）", op("siwe.simple_paste", method="INDEX")),
+             ib("simple_position", "Simple Weight Paste（Name Position）", op("siwe.simple_paste", method="POSITION"))],
+            [ib("transfer_copy", "Transfer Weight / Copy", op("siwe.transfer_copy")),
+             ib("transfer_paste", "Transfer Weight / Paste", op("siwe.transfer_paste"))],
+            [ib("move_copy", "Move Influence Weight / Copy（移動元の列）", op("siwe.move_influence", sync=True, step="COPY")),
+             ib("move_paste", "Move Influence Weight / Paste（選択列へ移動）", op("siwe.move_influence", sync=True, step="PASTE"))],
+            [ib("vtx_copy", "Vertex Weight Copy", op("siwe.vertex_copy")),
+             ib("vtx_paste", "Vertex Weight Paste", op("siwe.vertex_paste"))],
+            [ib("cell_copy", "Cell Copy", op("siwe.cell_copy", sync=True)),
+             ib("cell_paste", "Cell Paste", op("siwe.cell_paste", sync=True))],
+        ))
+        # 3 行目: 対称 / スキン状態 / Go / インフルエンス管理
+        self.axis_box = QtWidgets.QComboBox()
+        self.axis_box.addItems(["X", "Y", "Z"])
+        self.axis_box.setCurrentText(s.mirror_axis)
+        self.axis_box.setToolTip("ミラー軸")
+        self.axis_box.currentTextChanged.connect(lambda v: self.set_prop("mirror_axis", v))
+        self.dir_box = QtWidgets.QComboBox()
+        self.dir_box.addItem("+ → -", "POS_TO_NEG")
+        self.dir_box.addItem("- → +", "NEG_TO_POS")
+        self.dir_box.setCurrentIndex(0 if s.mirror_direction == "POS_TO_NEG" else 1)
+        self.dir_box.setToolTip("ウェイトを転送する向き")
+        self.dir_box.currentIndexChanged.connect(lambda i: self.set_prop("mirror_direction", self.dir_box.itemData(i)))
+        self.influence_edit = QtWidgets.QLineEdit(s.new_influence)
+        self.influence_edit.setPlaceholderText("influence")
+        self.influence_edit.setFixedWidth(90)
+        self.influence_edit.setToolTip("追加するインフルエンス名（空ならメッシュと一緒に選択したアーマチュアの選択ボーン）")
+        self.influence_edit.textChanged.connect(lambda v: self.set_prop("new_influence", v))
+        main.addLayout(row(
+            [self.axis_box, self.dir_box,
+             ib("sym_weight", "Weight Symmetrize", op("siwe.symmetrize")),
+             ib("auto_symmetry", "Auto Symmetry", op("siwe.auto_symmetry")),
+             ib("marge", "Mesh Merge with Skinning", op("siwe.merge_skinned"))],
+            [ib("mute", "Toggle Mute Skinning", op("siwe.toggle_mute")),
+             ib("bind_pose", "Go to Bind Pose", op("siwe.bind_pose"))],
+            [ib("go_export", "Go Export", op("siwe.go_export")),
+             ib("go_import", "Go Import", op("siwe.go_import"))],
+            [self.influence_edit,
+             ib("inf_add", "Add Influence", op("siwe.add_influence")),
+             ib("inf_rem", "Remove Influence（選択列）", self.confirm_remove_influence),
+             ib("inf_clean", "Remove Unused Influences", op("siwe.remove_unused"))],
+        ))
+
+    def confirm_remove_influence(self, *_args) -> None:
+        """選択列のインフルエンスを、確認してから削除する（入れ子のイベントループを避けるため非モーダル）。"""
+        box = QtWidgets.QMessageBox(QtWidgets.QMessageBox.Icon.Question, "Remove Influence",
+                                    "選択した列のインフルエンス（頂点グループ）を削除しますか？", parent=self)
+        box.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No)
+        box.finished.connect(lambda r: self.run("siwe.remove_influence", sync=True)
+                             if r == QtWidgets.QMessageBox.StandardButton.Yes.value else None)
+        box.open()
+        self._confirm_box = box
 
     # ------------------------------------------------------------------ 状態
     def settings(self):
