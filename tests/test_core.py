@@ -8,6 +8,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "si_weight_editor" / "core"))
 
+import locks as lk  # noqa: E402
 import mirror_rules as mr  # noqa: E402
 import weight_math as wm  # noqa: E402
 
@@ -129,3 +130,25 @@ def test_mirror_rejects_substring_false_positive():
     known = {"spine_Lower", "arm_L", "arm_R"}
     assert mr.mirror_name("spine_Lower", exists=known.__contains__) is None
     assert mr.mirror_name("arm_L", exists=known.__contains__) == "arm_R"
+
+
+def test_limit_row_keeps_sum():
+    """上限を超えた小さい値を落とし、合計は元の合計に揃える。上限以下なら変えない。"""
+    out = wm.limit_row([0.5, 0.3, 0.15, 0.05], 2)
+    assert out[2] == 0.0 and out[3] == 0.0
+    assert abs(sum(out) - 1.0) < 1e-9
+    assert _close(wm.limit_row([0.6, 0.4], 2), [0.6, 0.4])
+    with pytest.raises(ValueError):
+        wm.limit_row([1.0], 0)
+
+
+def test_toggle_column_locks_then_unlocks():
+    """列にロックが無ければ全頂点をロックし、あれば全頂点を解除する。引数は変更しない。"""
+    before = {0: {"b"}}
+    locked, flag = lk.toggle_column(before, "a", range(3))
+    assert flag is True
+    assert locked == {0: {"b", "a"}, 1: {"a"}, 2: {"a"}}
+    assert before == {0: {"b"}}
+    unlocked, flag = lk.toggle_column(locked, "a", range(3))
+    assert flag is False
+    assert unlocked == {0: {"b"}}

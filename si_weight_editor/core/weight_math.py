@@ -167,6 +167,27 @@ def enforce_influence_limit(
     return [0.0 if i in drop else w for i, w in enumerate(weights)]
 
 
+def limit_row(weights: Sequence[float], limit: int) -> list[float]:
+    """使用インフルエンス数を ``limit`` 以下にし、合計を元の合計に戻す（スムース後の Obey Max Influences 用）。
+
+    Args:
+        weights: ウェイト行。
+        limit: 残すインフルエンス数の上限（1 以上）。
+
+    Returns:
+        上限を超えた分を 0.0 にし、残りを比例配分して元の合計に揃えた行。上限以下ならそのままのコピー。
+
+    Raises:
+        ValueError: ``limit`` が 1 未満の場合。
+    """
+    limited = enforce_influence_limit(weights, limit)
+    total, kept = sum(weights), sum(limited)
+    if kept <= 0.0 or total == kept:
+        return limited
+    scale = total / kept
+    return [w * scale for w in limited]
+
+
 def round_weights(weights: Sequence[float], digits: int) -> list[float]:
     """小数点以下 ``digits`` 桁に丸め、丸め誤差で合計がずれた分を最初の十分大きい値で補正する。
 

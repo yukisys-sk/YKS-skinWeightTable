@@ -146,6 +146,17 @@ class WeightModel(QtCore.QAbstractTableModel):
         """
         return self.rows[row], self.cols[col]
 
+    def source_column(self, col: int) -> int | None:
+        """表示列番号を、``WindowManager.siwe.cols`` の添字に変換する。
+
+        Args:
+            col: 表示上の列番号。
+
+        Returns:
+            スナップショット上の列番号。範囲外なら ``None``。
+        """
+        return self.cols[col] if 0 <= col < len(self.cols) else None
+
     def rowCount(self, parent=QtCore.QModelIndex()) -> int:
         """表示行数。"""
         return 0 if parent.isValid() else len(self.rows)
@@ -218,6 +229,8 @@ class WeightModel(QtCore.QAbstractTableModel):
 class VerticalHeader(QtWidgets.QHeaderView):
     """ボーン名を 90 度回転して描く横方向のヘッダー（縦長の領域に収めて列を狭くする）。"""
 
+    right_clicked = QtCore.Signal(int)  # 右クリックされた表示列番号（見出しの外なら -1）
+
     def __init__(self, parent=None) -> None:
         super().__init__(Qt.Orientation.Horizontal, parent)
         self._font = QtGui.QFont("Helvetica", 9)
@@ -227,6 +240,13 @@ class VerticalHeader(QtWidgets.QHeaderView):
         self._margin = 5
         self.setSectionsClickable(True)
         self.setHighlightSections(True)
+
+    def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
+        """右クリックは列番号を通知し（ジョイント選択用）、それ以外は通常どおり処理する。"""
+        if event.button() == Qt.MouseButton.RightButton:
+            self.right_clicked.emit(self.logicalIndexAt(event.position().toPoint()))
+            return
+        super().mouseReleaseEvent(event)
 
     def paintSection(self, painter, rect, index) -> None:
         """セルの背景を塗り、ボーン名を 90 度回転して描く。"""

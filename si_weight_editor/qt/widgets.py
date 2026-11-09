@@ -85,6 +85,55 @@ class InputPopup(QtWidgets.QWidget):
         super().keyPressEvent(event)
 
 
+class SmoothSettings(QtWidgets.QWidget):
+    """スムースの設定（適用率・繰り返し回数・0 を保つ・最大インフルエンス数に従う）を編集する小さなウィンドウ。
+
+    値を変えるたびに ``changed(プロパティ名, 値)`` を通知する。閉じても値は ``WindowManager.siwe`` に残る。
+    """
+
+    changed = Signal(str, object)
+
+    def __init__(self, amount: float, iterations: int, keep_zero: bool, obey_limit: bool, limit: int, parent=None) -> None:
+        super().__init__(parent, Qt.WindowType.Tool)
+        self.setWindowTitle("Smooth Settings")
+        form = QtWidgets.QFormLayout(self)
+        self.ratio = QtWidgets.QSpinBox()
+        self.ratio.setRange(0, 100)
+        self.ratio.setSuffix("%")
+        self.ratio.setToolTip("適用率（100 で通常のスムースと同じ）")
+        self.iterations = QtWidgets.QSpinBox()
+        self.iterations.setRange(1, 50)
+        self.iterations.setToolTip("繰り返し回数")
+        self.keep_zero = QtWidgets.QCheckBox("元が 0 のインフルエンスは 0 のままにする")
+        self.obey_limit = QtWidgets.QCheckBox(f"スムース後にインフルエンス数を {limit} 以下にする")
+        self.obey_limit.setToolTip("Enforce Limit の値に従う（Maya 版の Obey Max Influences）")
+        self.set_values(amount, iterations, keep_zero, obey_limit)
+        for label, widget in (("Ratio", self.ratio), ("Iterations", self.iterations), ("", self.keep_zero), ("", self.obey_limit)):
+            form.addRow(label, widget)
+        self.ratio.valueChanged.connect(lambda v: self.changed.emit("smooth_amount", v / 100))
+        self.iterations.valueChanged.connect(lambda v: self.changed.emit("smooth_iterations", v))
+        self.keep_zero.toggled.connect(lambda v: self.changed.emit("smooth_keep_zero", bool(v)))
+        self.obey_limit.toggled.connect(lambda v: self.changed.emit("smooth_obey_limit", bool(v)))
+
+    def set_values(self, amount: float, iterations: int, keep_zero: bool, obey_limit: bool) -> None:
+        """通知を出さずに表示を更新する（本体側で値が変わったとき用）。
+
+        Args:
+            amount: 適用率（0〜1）。
+            iterations: 繰り返し回数。
+            keep_zero: 0 を保つか。
+            obey_limit: 最大インフルエンス数に従うか。
+        """
+        for w in (self.ratio, self.iterations, self.keep_zero, self.obey_limit):
+            w.blockSignals(True)
+        self.ratio.setValue(round(amount * 100))
+        self.iterations.setValue(iterations)
+        self.keep_zero.setChecked(keep_zero)
+        self.obey_limit.setChecked(obey_limit)
+        for w in (self.ratio, self.iterations, self.keep_zero, self.obey_limit):
+            w.blockSignals(False)
+
+
 class RuleEditor(QtWidgets.QWidget):
     """左右の命名規則（1 行に『左,右』）を編集する小さなウィンドウ。"""
 
