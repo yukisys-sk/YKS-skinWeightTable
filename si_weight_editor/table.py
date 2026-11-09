@@ -15,6 +15,7 @@ from . import mesh_io
 from .core import weight_math as wm
 
 MAX_TABLE_ROWS = 2000
+generation = 0  # refresh / clear のたびに増える。Qt のモデルが再読み込みの要否を判断する
 LOCK_KEY = "siwe_locks"
 EPS = 1e-6
 
@@ -40,7 +41,7 @@ def active_mesh(context: bpy.types.Context) -> bpy.types.Object | None:
     Returns:
         メッシュオブジェクト。無ければ None。
     """
-    obj = context.object
+    obj = getattr(context, "object", None)  # ファイル読み込み直後のタイマーでは属性が無いことがある
     return obj if obj is not None and obj.type == "MESH" else None
 
 
@@ -82,6 +83,8 @@ def clear(s) -> None:
     Args:
         s: UI 設定。
     """
+    global generation
+    generation += 1
     s.rows.clear()
     s.cols.clear()
     s.cells.clear()
@@ -95,6 +98,8 @@ def refresh(context: bpy.types.Context, keep_selection: bool = True) -> None:
         context: 現在のコンテキスト。
         keep_selection: True なら同じ (頂点, インフルエンス) のセル選択を引き継ぐ。
     """
+    global generation
+    generation += 1
     s = settings(context)
     obj = active_mesh(context)
     if obj is None:

@@ -7,7 +7,12 @@ tagline = "ウェイトテーブルでスキンウェイトを編集する"
 maintainer = "Yukisys"
 type = "add-on"
 
-blender_version_min = "4.5.0"
+blender_version_min = "5.2.0"
+platforms = ["windows-x64"]
+wheels = [
+  "./wheels/pyside6_essentials-6.12.0-cp310-abi3-win_amd64.whl",
+  "./wheels/shiboken6-6.12.0-cp310-abi3-win_amd64.whl",
+]
 
 license = ["SPDX:MIT"]
 copyright = ["2017 ShikouYamaue", "2026 Yukisys"]

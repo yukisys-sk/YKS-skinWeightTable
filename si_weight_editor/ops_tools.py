@@ -653,3 +653,30 @@ CLASSES = (
     SIWE_OT_remove_influence,
     SIWE_OT_remove_unused,
 )
+
+
+class SIWE_OT_open_qt_window(bpy.types.Operator):
+    """Qt（PySide6）の外部ウィンドウで Skin Weight Table を開く。"""
+
+    bl_idname = "siwe.open_qt_window"
+    bl_label = "Open Qt Window"
+
+    @classmethod
+    def poll(cls, context):
+        """アクティブがメッシュのときだけ実行可能。"""
+        return table.active_mesh(context) is not None
+
+    def execute(self, context):
+        """PySide6 を読み込んでウィンドウを表示する。読み込めなければ原因を報告する。"""
+        try:
+            from .qt import runtime, window
+        except ImportError as exc:
+            self.report({"ERROR"}, f"PySide6 を読み込めません。拡張機能の wheel が入っているか確認してください: {exc}")
+            return {"CANCELLED"}
+        table.refresh(context)
+        runtime.ensure_app()
+        runtime.show(window.SkinWeightWindow())
+        return {"FINISHED"}
+
+
+CLASSES = CLASSES + (SIWE_OT_open_qt_window,)
