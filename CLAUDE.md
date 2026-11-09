@@ -54,5 +54,6 @@ Maya 用 [SIWeightEditor](https://github.com/ShikouYamaue/SIWeightEditor)（MIT,
   - `data()` の中で bpy に触れない（`Snapshot` に一括で写してから描く）
   - タイマーから呼んだオペレーターは Undo ステップを積まない。データを変える操作の後は `ed.undo_push` を呼ぶ（`window.DATA_OPS`）
 - アンロード / File > New では `runtime.close_all()` で閉じる（`__init__.py`）
+- ボタンは文字ラベルが基本（`window.BUTTON_LABELS`）。元の SIWeightEditor のアイコン画像は権利関係を明確にするため使わない。自作のアイコンは `qt/icons/<キー>.png`（キーは `BUTTON_LABELS` と同じ）を置くとそのボタンだけ画像になる
 - 試験: `tests/blender_qt_window.py`（GUI モード）。zip を隔離プロファイルにインストールして検証する手順は、`BLENDER_USER_CONFIG` / `BLENDER_USER_SCRIPTS` / `BLENDER_USER_EXTENSIONS` を一時フォルダにして `extension install-file -r user_default --enable` を使う
 

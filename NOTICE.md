@@ -20,12 +20,6 @@ report issues to this repository instead.
 元の著作権者による承認・支援を受けたものではありません。
 本プロジェクトに関する問い合わせや不具合報告を、元リポジトリや元の著作権者へ送らないでください。
 
-## アイコン / Icons
-
-The button icons in `si_weight_editor/qt/icons/` are taken from the original SIWeightEditor
-(Copyright (c) 2017 ShikouYamaue, MIT License) without modification.
-`si_weight_editor/qt/icons/` のボタンアイコンは、元の SIWeightEditor（ShikouYamaue 氏、MIT License）のものを無改変で使っています。
-
 ## ライセンス / License
 
 MIT License. See [LICENSE](LICENSE). The original copyright notice and permission notice are retained there

@@ -23,6 +23,19 @@ from .model import Snapshot, VerticalHeader, WeightModel
 from .widgets import InputPopup, RuleEditor, WeightView
 
 ICON_DIR = Path(__file__).parent / "icons"
+# ボタンの文字ラベル。``icons/<キー>.png`` を置くと、そのボタンだけ文字の代わりに画像（自作のアイコン）を使う
+BUTTON_LABELS = {
+    "hummer": "Ham", "hummer_zero": "Ham0", "smooth": "Smo", "smooth_zero": "Smo0",
+    "freeze": "Frz", "freeze_m": "FrzM",
+    "simple_copy": "S.Copy", "simple_topology": "S.Idx", "simple_position": "S.Pos",
+    "transfer_copy": "T.Copy", "transfer_paste": "T.Paste",
+    "move_copy": "M.Copy", "move_paste": "M.Move",
+    "vtx_copy": "V.Copy", "vtx_paste": "V.Paste",
+    "cell_copy": "C.Copy", "cell_paste": "C.Paste",
+    "sym_weight": "Sym", "auto_symmetry": "Auto", "marge": "Merge",
+    "mute": "Mute", "bind_pose": "Bind", "go_export": "GoExp", "go_import": "GoImp",
+    "inf_add": "+Inf", "inf_rem": "-Inf", "inf_clean": "Clean",
+}
 POLL_MS = 150
 SLIDER_STEPS = 1000
 LIVE_REFRESH_MS = 60
@@ -242,24 +255,30 @@ class SkinWeightWindow(QtWidgets.QMainWindow):
         self.statusBar().showMessage("")
         self.resize(760, 640)
 
-    def icon_button(self, icon: str, tip: str, slot) -> QtWidgets.QPushButton:
-        """Maya 版と同じアイコンの正方形ボタンを作る。
+    def icon_button(self, key: str, tip: str, slot) -> QtWidgets.QPushButton:
+        """サブツールのボタンを作る。文字ラベルが基本で、``icons/<key>.png`` があればそれをアイコンにする。
 
         Args:
-            icon: ``icons/`` 内の PNG のファイル名（拡張子なし）。
+            key: ボタンの識別キー（``BUTTON_LABELS`` のキー、アイコンのファイル名）。
             tip: ツールチップ（機能名）。
             slot: クリック時の呼び出し先。
 
         Returns:
             ``QPushButton``。
         """
-        b = QtWidgets.QPushButton()
-        b.setIcon(QtGui.QIcon(str(ICON_DIR / f"{icon}.png")))
-        b.setIconSize(QtCore.QSize(22, 22))
-        b.setFixedSize(30, 28)
+        icon_path = ICON_DIR / f"{key}.png"
+        if icon_path.exists():
+            b = QtWidgets.QPushButton()
+            b.setIcon(QtGui.QIcon(str(icon_path)))
+            b.setIconSize(QtCore.QSize(22, 22))
+            b.setFixedSize(30, 28)
+        else:
+            b = QtWidgets.QPushButton(BUTTON_LABELS.get(key, key))
+            b.setMinimumWidth(40)
+            b.setFixedHeight(26)
         b.setToolTip(tip)
         b.clicked.connect(slot)
-        self.buttons[icon] = b
+        self.buttons[key] = b
         return b
 
     def _build_tools(self, main: QtWidgets.QVBoxLayout) -> None:
