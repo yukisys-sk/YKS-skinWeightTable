@@ -79,6 +79,7 @@ class _MainDraw:
         _op(bar, "siwe.clear_table", "", "X")
         _op(bar, "siwe.select_from_cells", "", "RESTRICT_SELECT_OFF")
         _op(bar, "siwe.open_window", "", "WINDOW")
+        _op(bar, "siwe.open_qt_window", "Qt")
         bar.separator()
         bar.prop(s, "display_scale", expand=True)
         bar.prop(s, "auto_update", text="", icon="TIME")

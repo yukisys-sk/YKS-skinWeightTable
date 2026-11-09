@@ -24,3 +24,17 @@ report issues to this repository instead.
 
 MIT License. See [LICENSE](LICENSE). The original copyright notice and permission notice are retained there
 as required by the MIT License.
+
+## 同梱するサードパーティ / Bundled third-party software
+
+The extension package bundles the following wheels (unmodified, from PyPI) for the optional Qt window:
+
+- **PySide6-Essentials 6.12.0** and **shiboken6 6.12.0** (Qt for Python, The Qt Company).
+  Licensed under the **GNU LGPL v3** (some parts under GPL/commercial terms; see the license files inside each wheel's `dist-info`).
+  Source code: https://code.qt.io/cgit/pyside/pyside-setup.git/ and https://download.qt.io/official_releases/QtForPython/
+  The libraries are bundled as separate wheel files in `wheels/`, so you can replace them with another build of PySide6.
+
+拡張機能の zip には、Qt ウィンドウのために上記の wheel（PyPI からそのまま取得、無改変）を同梱しています。
+PySide6 / shiboken6 は LGPL v3 で提供されています。ライセンス文は各 wheel の `dist-info` にあり、
+ソースコードは上記 URL から入手できます。`wheels/` の別ファイルとして同梱しているため、別のビルドの PySide6 に差し替えられます。
+

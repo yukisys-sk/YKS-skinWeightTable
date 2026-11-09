@@ -3,3 +3,5 @@ __pycache__/
 .pytest_cache/
 *.zip
 dist/
+.vendor/
+.wheels_cache/
